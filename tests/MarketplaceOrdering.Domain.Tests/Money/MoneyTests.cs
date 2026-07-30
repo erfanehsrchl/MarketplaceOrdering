@@ -145,4 +145,23 @@ public sealed class MoneyTests
         larger.CompareTo(smaller).Should().BePositive();
         smaller.CompareTo(equal).Should().Be(0);
     }
+
+    [Theory]
+    [InlineData(0, 0)]
+    [InlineData(1, 25)]
+    [InlineData(4, 100)]
+    public void Multiply_ShouldSupportNonNegativeIntegers(int multiplier, long expected)
+    {
+        MoneyValue.Create(25).Value.Multiply(multiplier).Value.Amount
+            .Should().Be(expected);
+    }
+
+    [Fact]
+    public void Multiply_ShouldReturnStableFailures()
+    {
+        MoneyValue.Create(long.MaxValue).Value.Multiply(2).Error.Code
+            .Should().Be("money.overflow");
+        MoneyValue.Create(1).Value.Multiply(-1).Error.Code
+            .Should().Be("money.negative_multiplier");
+    }
 }

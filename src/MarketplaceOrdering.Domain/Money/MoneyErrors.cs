@@ -12,4 +12,9 @@ public static class MoneyErrors
 
     public static Error Overflow { get; } =
         Error.BusinessRule("money.overflow", "The money operation exceeded the supported range.");
+
+    public static Error NegativeMultiplier { get; } =
+        Error.Validation(
+            "money.negative_multiplier",
+            "Money cannot be multiplied by a negative value.");
 }

@@ -46,5 +46,23 @@ public readonly record struct Money : IComparable<Money>
         }
     }
 
+    public Result<Money> Multiply(int multiplier)
+    {
+        if (multiplier < 0)
+        {
+            return Result<Money>.Failure(MoneyErrors.NegativeMultiplier);
+        }
+
+        try
+        {
+            return Result<Money>.Success(
+                new Money(checked(Amount * multiplier)));
+        }
+        catch (OverflowException)
+        {
+            return Result<Money>.Failure(MoneyErrors.Overflow);
+        }
+    }
+
     public int CompareTo(Money other) => Amount.CompareTo(other.Amount);
 }

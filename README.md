@@ -4,7 +4,7 @@ Implementation is being completed incrementally.
 
 Completed Phase 1: Solution skeleton and shared domain primitives.
 
-Current completed phase: Discount Domain model and deterministic allocation.
+Current completed phase: Exact Fulfillment planning and best-candidate selection.
 
 The marketplace is modeled as a single-currency system because multi-currency behavior is outside the assignment scope. Monetary values are represented as non-negative long integer amounts in the marketplace's smallest supported monetary unit.
 
@@ -29,3 +29,14 @@ The marketplace is modeled as a single-currency system because multi-currency be
 - Vendor allocation uses the Largest Remainder Method, with equal remainders resolved by VendorId.
 - Allocation preserves the exact total Discount.
 - `DiscountCalculation` is the single immutable result model; no separate `DiscountSnapshot` is currently needed.
+
+## Fulfillment
+
+- Fulfillment must cover the complete Order; each Product may use at most two Vendors and the complete Order at most three.
+- Shipping is charged once per selected Vendor.
+- MinimumOrderAmount is checked against the Vendor product subtotal before Discount and excluding Shipping.
+- ShippingCost and MinimumOrderAmount are Vendor-level terms repeated consistently on Offers; delivery hours may vary per Product Offer.
+- The exact algorithm enumerates all Product allocation options and combines them with deterministic backtracking. Worst-case complexity is exponential in Product count, which is acceptable for the assignment constraints; high-scale systems could use branch-and-bound, dominance pruning, CP-SAT, or MILP.
+- Candidates are ranked by lowest TotalPayable, fewer Vendors, lower maximum delivery time, then deterministic allocation ordering.
+- Discount is evaluated per Candidate before ranking.
+- FulfillmentPlan is an immutable calculated Domain result.
