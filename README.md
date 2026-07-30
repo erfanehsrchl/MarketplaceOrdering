@@ -4,7 +4,7 @@ Implementation is being completed incrementally.
 
 Completed Phase 1: Solution skeleton and shared domain primitives.
 
-Current completed phase: Exact Fulfillment planning and best-candidate selection.
+Current completed phase: Checkout Aggregate state and Reservation tracking.
 
 The marketplace is modeled as a single-currency system because multi-currency behavior is outside the assignment scope. Monetary values are represented as non-negative long integer amounts in the marketplace's smallest supported monetary unit.
 
@@ -40,3 +40,15 @@ The marketplace is modeled as a single-currency system because multi-currency be
 - Candidates are ranked by lowest TotalPayable, fewer Vendors, lower maximum delivery time, then deterministic allocation ordering.
 - Discount is evaluated per Candidate before ranking.
 - FulfillmentPlan is an immutable calculated Domain result.
+
+## Checkout Domain
+
+- Order remains the only Aggregate Root. CheckoutAttempt and InventoryReservation are entities owned exclusively by Order.
+- Order retains one current CheckoutAttempt; historical attempt details will be represented through Domain Events or audit persistence.
+- Order enters Processing before external Reservation operations begin, and a matching FulfillmentPlan is attached before Reservation intent is recorded.
+- One Reservation intent exists for each `Order + CheckoutAttempt + Vendor`; its ReservationOperationKey is deterministic.
+- Inventory Reservations have an exact 15-minute lifetime supplied from the recorded reservation time.
+- Order enters AwaitingPayment only when every Plan Vendor has one Active, unexpired Reservation. PaymentExpiresAt is the earliest Reservation expiration.
+- A failed Checkout returns Order to Draft, but a new Checkout remains blocked while compensation is pending.
+- Final business failure and technical cleanup state are tracked separately.
+- The Domain records externally supplied outcomes and never performs external service calls.
