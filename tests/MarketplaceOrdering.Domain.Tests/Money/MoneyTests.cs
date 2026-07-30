@@ -1,5 +1,4 @@
 using FluentAssertions;
-using MarketplaceOrdering.Domain.Money;
 using MoneyValue = MarketplaceOrdering.Domain.Money.Money;
 
 namespace MarketplaceOrdering.Domain.Tests.Money;
@@ -7,114 +6,143 @@ namespace MarketplaceOrdering.Domain.Tests.Money;
 public sealed class MoneyTests
 {
     [Theory]
-    [InlineData(0)]
     [InlineData(1)]
+    [InlineData(42)]
     [InlineData(long.MaxValue)]
-    public void Create_ShouldPreserveEveryNonNegativeMinorUnit(long minorUnits)
+    public void Create_ShouldPreserveEveryPositiveIntegerAmount(long amount)
     {
-        var money = MoneyValue.Create(minorUnits, Currency.USD);
+        var result = MoneyValue.Create(amount);
 
-        money.IsSuccess.Should().BeTrue();
-        money.Value.MinorUnits.Should().Be(minorUnits);
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Amount.Should().Be(amount);
+    }
+
+    [Fact]
+    public void Create_ShouldAcceptZero()
+    {
+        var result = MoneyValue.Create(0);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Amount.Should().Be(0);
+        result.Value.Amount.Should().BeGreaterThanOrEqualTo(0);
     }
 
     [Fact]
     public void Create_ShouldRejectNegativeAmount()
     {
-        MoneyValue.Create(-1, Currency.USD).Error.Code.Should().Be("money.negative");
+        var result = MoneyValue.Create(-1);
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Code.Should().Be("money.negative");
     }
 
     [Fact]
-    public void Zero_ShouldCreateNonNegativeZero()
+    public void Zero_ShouldHaveAnAmountOfZero()
     {
-        var zero = MoneyValue.Zero(Currency.USD);
-
-        zero.IsZero.Should().BeTrue();
-        zero.MinorUnits.Should().Be(0);
-        zero.Currency.Should().Be(Currency.USD);
+        MoneyValue.Zero.Amount.Should().Be(0);
+        MoneyValue.Zero.Amount.Should().BeGreaterThanOrEqualTo(0);
     }
 
     [Fact]
-    public void Add_ShouldAddMatchingCurrencies()
+    public void Zero_ShouldAddAndSubtractSafely()
     {
-        var left = MoneyValue.Create(100, Currency.USD).Value;
-        var right = MoneyValue.Create(25, Currency.USD).Value;
+        var amount = MoneyValue.Create(125).Value;
 
-        left.Add(right).Value.MinorUnits.Should().Be(125);
+        MoneyValue.Zero.Add(amount).Value.Should().Be(amount);
+        amount.Add(MoneyValue.Zero).Value.Should().Be(amount);
+        MoneyValue.Zero.Subtract(MoneyValue.Zero).Value.Should().Be(MoneyValue.Zero);
     }
 
     [Fact]
-    public void Add_ShouldRejectDifferentCurrencies()
+    public void Equality_ShouldBeBasedOnlyOnAmount()
     {
-        var result = MoneyValue.Create(100, Currency.USD).Value
-            .Add(MoneyValue.Create(25, Currency.EUR).Value);
-
-        result.Error.Code.Should().Be("money.currency_mismatch");
+        MoneyValue.Create(100).Value.Should().Be(MoneyValue.Create(100).Value);
+        MoneyValue.Create(100).Value.Should().NotBe(MoneyValue.Create(101).Value);
     }
 
     [Fact]
-    public void Add_ShouldReturnFailureOnOverflow()
+    public void Add_ShouldAddAmountsExactly()
     {
-        var result = MoneyValue.Create(long.MaxValue, Currency.USD).Value
-            .Add(MoneyValue.Create(1, Currency.USD).Value);
+        var left = MoneyValue.Create(100).Value;
+        var right = MoneyValue.Create(25).Value;
 
-        result.Error.Code.Should().Be("money.overflow");
+        left.Add(right).Value.Amount.Should().Be(125);
     }
 
     [Fact]
-    public void Subtract_ShouldSubtractMatchingCurrencies()
+    public void Add_ShouldPreserveZeroIdentity()
     {
-        var result = MoneyValue.Create(100, Currency.USD).Value
-            .Subtract(MoneyValue.Create(25, Currency.USD).Value);
+        var amount = MoneyValue.Create(987_654_321).Value;
 
-        result.Value.MinorUnits.Should().Be(75);
+        amount.Add(MoneyValue.Zero).Value.Should().Be(amount);
+        MoneyValue.Zero.Add(amount).Value.Should().Be(amount);
     }
 
     [Fact]
-    public void Subtract_ShouldRejectInsufficientAmount()
+    public void Add_ShouldPreserveEveryIntegerMonetaryUnit()
     {
-        var result = MoneyValue.Create(25, Currency.USD).Value
-            .Subtract(MoneyValue.Create(100, Currency.USD).Value);
+        var result = MoneyValue.Create(9_007_199_254_740_991).Value
+            .Add(MoneyValue.Create(1).Value);
 
-        result.Error.Code.Should().Be("money.insufficient_amount");
+        result.Value.Amount.Should().Be(9_007_199_254_740_992);
     }
 
     [Fact]
-    public void Subtract_ShouldRejectDifferentCurrencies()
+    public void Add_ShouldReturnOverflowFailureWithoutThrowing()
     {
-        var result = MoneyValue.Create(100, Currency.USD).Value
-            .Subtract(MoneyValue.Create(25, Currency.EUR).Value);
+        var maximum = MoneyValue.Create(long.MaxValue).Value;
+        var one = MoneyValue.Create(1).Value;
+        var operation = () => maximum.Add(one);
 
-        result.Error.Code.Should().Be("money.currency_mismatch");
+        operation.Should().NotThrow();
+        operation().Error.Code.Should().Be("money.overflow");
     }
 
     [Fact]
-    public void CompareTo_ShouldCompareMatchingCurrencies()
+    public void Subtract_ShouldSubtractSmallerAmount()
     {
-        var smaller = MoneyValue.Create(25, Currency.USD).Value;
-        var larger = MoneyValue.Create(100, Currency.USD).Value;
+        var result = MoneyValue.Create(100).Value
+            .Subtract(MoneyValue.Create(25).Value);
 
-        smaller.CompareTo(larger).Value.Should().BeNegative();
-        larger.CompareTo(smaller).Value.Should().BePositive();
-        smaller.CompareTo(smaller).Value.Should().Be(0);
+        result.Value.Amount.Should().Be(75);
     }
 
     [Fact]
-    public void CompareTo_ShouldRejectDifferentCurrencies()
+    public void Subtract_ShouldReturnZeroForEqualAmounts()
     {
-        var result = MoneyValue.Create(25, Currency.USD).Value
-            .CompareTo(MoneyValue.Create(25, Currency.EUR).Value);
+        var amount = MoneyValue.Create(100).Value;
 
-        result.Error.Code.Should().Be("money.currency_mismatch");
+        amount.Subtract(amount).Value.Should().Be(MoneyValue.Zero);
     }
 
     [Fact]
-    public void Equality_ShouldIncludeAmountAndCurrency()
+    public void Subtract_ShouldPreserveAmountWhenSubtractingZero()
     {
-        var usd = MoneyValue.Create(100, Currency.USD).Value;
+        var amount = MoneyValue.Create(100).Value;
 
-        usd.Should().Be(MoneyValue.Create(100, Currency.USD).Value);
-        usd.Should().NotBe(MoneyValue.Create(100, Currency.EUR).Value);
-        usd.ToString().Should().Be("100 USD");
+        amount.Subtract(MoneyValue.Zero).Value.Should().Be(amount);
+    }
+
+    [Fact]
+    public void Subtract_ShouldReturnInsufficientAmountWithoutThrowing()
+    {
+        var smaller = MoneyValue.Create(25).Value;
+        var larger = MoneyValue.Create(100).Value;
+        var operation = () => smaller.Subtract(larger);
+
+        operation.Should().NotThrow();
+        operation().Error.Code.Should().Be("money.insufficient_amount");
+    }
+
+    [Fact]
+    public void CompareTo_ShouldCompareOnlyAmounts()
+    {
+        var smaller = MoneyValue.Create(25).Value;
+        var larger = MoneyValue.Create(100).Value;
+        var equal = MoneyValue.Create(25).Value;
+
+        smaller.CompareTo(larger).Should().BeNegative();
+        larger.CompareTo(smaller).Should().BePositive();
+        smaller.CompareTo(equal).Should().Be(0);
     }
 }
