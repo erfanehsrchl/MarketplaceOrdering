@@ -1,5 +1,7 @@
+using MarketplaceOrdering.Application;
 using MarketplaceOrdering.Api.Configuration;
 using MarketplaceOrdering.Api.ErrorHandling;
+using MarketplaceOrdering.Infrastructure;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 
@@ -19,6 +21,7 @@ builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure();
+builder.Services.AddSingleton<DemoDataSeeder>();
 
 var app = builder.Build();
 

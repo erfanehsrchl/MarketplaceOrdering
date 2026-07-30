@@ -29,9 +29,9 @@ The `http` launch profile listens on the URL defined in `launchSettings.json` an
 ## Solution structure
 
 - `MarketplaceOrdering.Domain` — Aggregate, entities, value objects, business rules, algorithms, results, and Domain Events.
-- `MarketplaceOrdering.Application` — use cases, orchestration, output ports, and transport-neutral response models.
-- `MarketplaceOrdering.Infrastructure` — thread-safe in-memory implementations of Application ports.
-- `MarketplaceOrdering.Api` — ASP.NET Core composition root, controllers, HTTP contracts, error mapping, Swagger, and Development seeding.
+- `MarketplaceOrdering.Application` — use cases, orchestration, output ports, transport-neutral response models, and its `AddApplication()` registration module.
+- `MarketplaceOrdering.Infrastructure` — thread-safe in-memory implementations of Application ports and their `AddInfrastructure()` registration module.
+- `MarketplaceOrdering.Api` — ASP.NET Core composition root that invokes both modules and owns controllers, HTTP contracts, error mapping, Swagger, and Development seeding.
 - `MarketplaceOrdering.Domain.Tests` — isolated business-rule and algorithm tests.
 - `MarketplaceOrdering.Application.Tests` — orchestration, failure-window, adapter, isolation, and concurrency tests.
 - `MarketplaceOrdering.Api.Tests` — in-memory TestServer integration and architecture tests.
@@ -51,6 +51,356 @@ Api
 ```
 
 Domain references no other project. Application references Domain. Infrastructure implements Application ports and references Application and Domain. API composes Application and Infrastructure. HTTP concepts do not appear in Domain or Application.
+
+### Dependency injection ownership
+
+API remains the final Composition Root and chooses which modules form the running application. Registration details stay with the layer that owns the services:
+
+- Application owns `AddApplication()`, including scoped use cases and `ReservationReleaseCoordinator`, plus singleton `ProportionalDiscountAllocator` and `FulfillmentPlanner`.
+- Infrastructure owns `AddInfrastructure()`, including singleton adapters and their Application-port mappings.
+- API invokes both methods and keeps only API-specific registrations such as `DemoDataSeeder`.
+- Domain has no dependency on `Microsoft.Extensions.DependencyInjection` or any container abstraction.
+
+Every stateful adapter is registered first by its concrete type and then mapped to its port by resolving that concrete registration. Consequently, demo seeding, reset operations, and Application use cases observe the exact same singleton instance rather than separate in-memory stores.
+
+## Visual Architecture and Project Flows
+
+The diagrams in this section summarize the project boundaries, Domain ownership, orchestration order, failure handling, and demonstration paths implemented by the solution.
+
+### Clean Architecture Dependency Flow
+
+Production project references point inward. Domain is the innermost project and has no dependency on Application, Infrastructure, or API.
+
+```mermaid
+flowchart TD
+    API["MarketplaceOrdering.Api: composition root invokes modules"]
+    APP["MarketplaceOrdering.Application: use cases, ports, AddApplication"]
+    INFRA["MarketplaceOrdering.Infrastructure: adapters, AddInfrastructure"]
+    DOMAIN["MarketplaceOrdering.Domain: business rules"]
+
+    API --> APP
+    API --> INFRA
+    INFRA --> APP
+    INFRA --> DOMAIN
+    APP --> DOMAIN
+```
+
+Application depends only on Domain. Infrastructure implements Application ports and depends on Application and Domain. API composes Application and Infrastructure without moving business rules into controllers.
+
+### Order State Machine
+
+The Order Aggregate permits only the following business-state transitions.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Draft
+    Draft --> Processing: Start Checkout
+    Processing --> AwaitingPayment: Checkout completed
+    Processing --> Draft: Checkout failed
+    Draft --> Cancelled: Cancel
+    Processing --> Cancelled: Cancel
+    AwaitingPayment --> Paid: Confirm payment
+    AwaitingPayment --> Cancelled: Cancel
+    AwaitingPayment --> Expired: Payment window expired
+    Paid --> [*]
+    Cancelled --> [*]
+    Expired --> [*]
+```
+
+Paid, Cancelled, and Expired are final business states. Technical reservation release may continue after cancellation or expiration, but cleanup never changes the final Order status.
+
+### Order Aggregate Structure
+
+Order is the only Aggregate Root. It owns the mutable entities whose state must remain consistent with the Order lifecycle, while calculation models remain immutable Domain results or policies.
+
+```mermaid
+flowchart TD
+    subgraph AGG["Order Aggregate"]
+        ORDER["Order: Aggregate Root"]
+        ITEMS["OrderItem collection"]
+        SELECTED["SelectedDiscountCode"]
+        ATTEMPT["CheckoutAttempt"]
+        RESERVATIONS["InventoryReservation collection"]
+        PAYMENT["PaymentRecord"]
+        CANCELLATION["CancellationRecord"]
+
+        ORDER --> ITEMS
+        ORDER --> SELECTED
+        ORDER --> ATTEMPT
+        ATTEMPT --> RESERVATIONS
+        ORDER --> PAYMENT
+        ORDER --> CANCELLATION
+    end
+
+    subgraph CALC["Immutable calculation models"]
+        POLICY["DiscountPolicy"]
+        CALCULATION["DiscountCalculation"]
+        PLAN["FulfillmentPlan"]
+    end
+
+    ATTEMPT --> PLAN
+    PLAN --> CALCULATION
+    SELECTED -. stores code only .-> POLICY
+```
+
+OrderItem, CheckoutAttempt, InventoryReservation, PaymentRecord, and CancellationRecord have no independent repositories. FulfillmentPlan is an immutable calculated result attached to CheckoutAttempt. DiscountPolicy is not owned by Order; before Checkout, Order stores only the selected DiscountCode and its selection time.
+
+### Successful Checkout Flow
+
+Successful Checkout persists every local intent or known result before advancing to the next external operation. Idempotency is claimed before Order loading, and AwaitingPayment is durable before idempotency completion.
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant UseCase as CheckoutOrderUseCase
+    participant Idempotency as IdempotencyStore
+    participant Repository as OrderRepository
+    participant Offers as OfferProvider
+    participant Discounts as DiscountPolicyProvider
+    participant Planner as FulfillmentPlanner
+    participant Inventory as InventoryService
+    participant Order
+
+    Client->>API: POST Checkout with Idempotency-Key
+    API->>UseCase: Execute
+    UseCase->>Idempotency: TryBegin
+    Idempotency-->>UseCase: Started
+    UseCase->>Repository: Load Order and Version
+    Repository-->>UseCase: Isolated Order and Version
+    UseCase->>Order: StartCheckout
+    UseCase->>Repository: Save Processing
+    UseCase->>Offers: Get Offers
+    Offers-->>UseCase: Product Offers
+    opt Selected discount code exists
+        UseCase->>Discounts: Get selected policy
+        Discounts-->>UseCase: DiscountPolicy
+    end
+    UseCase->>Planner: CreateBestPlan
+    Planner-->>UseCase: FulfillmentPlan
+    UseCase->>Order: AttachFulfillmentPlan
+    UseCase->>Repository: Save Plan
+
+    loop Each selected Vendor
+        UseCase->>Order: BeginInventoryReservation
+        UseCase->>Repository: Save Reservation Intent
+        UseCase->>Inventory: Reserve with deterministic OperationKey
+        Inventory-->>UseCase: ReservationSucceeded
+        UseCase->>Order: Record Reservation Success
+        UseCase->>Repository: Save Active Reservation
+    end
+
+    UseCase->>Order: CompleteCheckout
+    UseCase->>Repository: Save AwaitingPayment
+    UseCase->>Idempotency: Complete
+    UseCase-->>API: CheckoutOperationResult
+    API-->>Client: 200 OK
+```
+
+Processing is saved before Offer or Discount calls. The FulfillmentPlan is saved before Inventory calls. Each Reservation intent precedes Reserve, and each Active result is saved before another Vendor is processed.
+
+### Checkout Failure and Compensation Flow
+
+Checkout distinguishes failures with no confirmed external side effect, definitive rejection requiring compensation, indeterminate outcomes, and external success that cannot be represented in Order persistence.
+
+```mermaid
+flowchart TD
+    START["Checkout started"]
+
+    START --> EARLY{"Failure before confirmed Reservation?"}
+    EARLY -->|"Offers, Discount, planning, or Plan save"| EARLYFAIL["Record Checkout failure"]
+    EARLYFAIL --> EARLYDRAFT["Order Draft and CheckoutAttempt Failed"]
+    EARLYDRAFT --> EARLYIDEM["Store failure for idempotency replay"]
+    EARLYIDEM --> NORELEASE["No Inventory release required"]
+
+    START --> INTENT["Reservation intent persisted"]
+    INTENT --> OUTCOME{"Inventory outcome"}
+
+    OUTCOME -->|Rejected| REJECTED["Persist Rejected outcome"]
+    REJECTED --> COMP["CheckoutAttempt Compensating"]
+    COMP --> REVERSE["Release Active Reservations in reverse order"]
+    REVERSE --> SAVERESULT["Persist every Release result"]
+    SAVERESULT --> RELEASES{"All Releases succeeded?"}
+    RELEASES -->|Yes| FAILED["Order Draft and CheckoutAttempt Failed"]
+    RELEASES -->|No| PENDING["Order Draft and CompensationPending"]
+    PENDING --> RETRY["Retry pending Releases"]
+
+    OUTCOME -->|Indeterminate| UNKNOWN["Reservation remains Pending"]
+    UNKNOWN --> PROCESSING["Order Processing and Idempotency InProgress"]
+    PROCESSING --> STOP["Stop later Vendors"]
+    STOP --> NOUNKNOWNRELEASE["No Release without known ReservationId"]
+
+    OUTCOME -->|Succeeded| EXTERNAL["External Reservation succeeded"]
+    EXTERNAL --> SAVESTATE{"Save Active state"}
+    SAVESTATE -->|Succeeded| CONTINUE["Continue Checkout"]
+    SAVESTATE -->|Failed| IMMEDIATE["Attempt immediate Release"]
+    IMMEDIATE --> RELEASEOUTCOME{"Release outcome"}
+    RELEASEOUTCOME -->|Succeeded| ORIGINAL["Return original persistence error"]
+    RELEASEOUTCOME -->|Failed or indeterminate| RECOVERY["Store ReservationRecoveryRecord"]
+    RECOVERY --> LATER["Later orphan recovery releases Reservation"]
+```
+
+Definitive rejections are persisted before compensation. Indeterminate Reserve does not trigger a guessed Release because no confirmed ReservationId exists. Orphan recovery is a safety net for a known external success that could not be saved inside Order.
+
+### Final Order Operations
+
+Payment, cancellation, and expiration use different Domain rules, but every persistence transition remains guarded by optimistic concurrency.
+
+```mermaid
+flowchart TD
+    AWAITING["AwaitingPayment"]
+
+    subgraph PAY["Payment"]
+        AWAITING --> AMOUNT{"Exact TotalPayable?"}
+        AMOUNT -->|No| WRONG["Wrong amount"]
+        AMOUNT -->|Yes| VALID{"Reservations valid at PaidAt?"}
+        VALID -->|No| EXPIREDRES["Expired Reservation"]
+        VALID -->|Yes| CONFIRM["Confirm Payment in Domain"]
+        CONFIRM --> SAVEPAY["SavePayment: Version and TransactionId atomically"]
+        SAVEPAY -->|Success| PAID["Paid"]
+        SAVEPAY -->|Transaction owned elsewhere| DUPLICATE["Duplicate TransactionId"]
+        SAVEPAY -->|Stale Version| PAYCONFLICT["Version conflict"]
+    end
+
+    subgraph CANCEL["Cancellation"]
+        CANCELABLE["Draft, Processing, or AwaitingPayment"] --> CANCELDOMAIN["Cancel in Domain"]
+        CANCELDOMAIN --> SAVECANCEL["Persist Cancelled"]
+        SAVECANCEL --> RELEASECANCEL["Release Active or ReleasePending Reservations"]
+        RELEASECANCEL --> PERSISTCANCEL["Persist every Release result"]
+    end
+
+    subgraph EXPIRE["Expiration"]
+        AWAITINGEXP["AwaitingPayment"] --> DUE{"Current time at or after PaymentExpiresAt?"}
+        DUE -->|No| NOTDUE["Expiration not due"]
+        DUE -->|Yes| EXPIREDOMAIN["Expire in Domain"]
+        EXPIREDOMAIN --> SAVEEXPIRED["Persist Expired"]
+        SAVEEXPIRED --> RELEASEEXPIRED["Release Reservations"]
+        RELEASEEXPIRED --> PERSISTEXPIRED["Persist every Release result"]
+    end
+```
+
+Cancelled and Expired are persisted before Inventory Release. A failed Release does not reverse either final state; it remains ReleasePending for retry. Payment and expiration races are resolved by optimistic concurrency, so only one Save using the same expected Version succeeds.
+
+### Fulfillment Planning Flow
+
+Fulfillment planning enumerates complete valid allocations, calculates each candidate independently, and ranks them deterministically.
+
+```mermaid
+flowchart TD
+    DEMANDS["Order Product Demands"]
+    OFFERS["Product Offers"]
+    POLICY["Optional DiscountPolicy"]
+    INPUT["Normalize planning input"]
+
+    DEMANDS --> INPUT
+    OFFERS --> INPUT
+    POLICY --> INPUT
+    INPUT --> FILTER["Ignore zero-price and non-positive-stock Offers"]
+    FILTER --> VALIDATE["Validate duplicate Offers and Vendor terms"]
+    VALIDATE --> ONE["Generate one-Vendor allocations per Product"]
+    ONE --> TWO["Generate valid two-Vendor splits per Product"]
+    TWO --> COMBINE["Combine Product options with deterministic backtracking"]
+    COMBINE --> LIMIT["Reject Candidates with more than three Vendors"]
+    LIMIT --> MINIMUM["Validate Vendor MinimumOrderAmount"]
+    MINIMUM --> SHIPPING["Charge Shipping once per Vendor"]
+    SHIPPING --> DISCOUNT["Evaluate Discount per Candidate"]
+    DISCOUNT --> TOTAL["Calculate TotalPayable"]
+    TOTAL --> RANK["Rank Candidates"]
+    RANK --> BEST["Return best FulfillmentPlan"]
+
+    CONSTRAINTS["Full fulfillment required; maximum two Vendors per Product; maximum three Vendors per Order; no partial fulfillment"]
+    CONSTRAINTS -. constrains .-> ONE
+    CONSTRAINTS -. constrains .-> TWO
+    CONSTRAINTS -. constrains .-> COMBINE
+
+    ORDERING["1 Lowest TotalPayable; 2 Fewer Vendors; 3 Lower MaximumDeliveryHours; 4 Deterministic allocation key"]
+    ORDERING -. defines .-> RANK
+```
+
+The algorithm never selects a partial plan. Discount is evaluated against each candidate's Vendor product amounts, while Shipping remains outside discount calculation.
+
+### Infrastructure Consistency Model
+
+Infrastructure adapters implement the Application ports with process-local, thread-safe state. The diagram describes local atomicity and idempotency; it does not imply a distributed ACID transaction.
+
+```mermaid
+flowchart LR
+    subgraph PORTS["Application Ports"]
+        ORDERPORT["IOrderRepository"]
+        OFFERPORT["IProductOfferProvider"]
+        DISCOUNTPORT["IDiscountPolicyProvider"]
+        INVENTORYPORT["IInventoryReservationService"]
+        IDEMPORT["ICheckoutIdempotencyStore"]
+        RECOVERYPORT["IReservationRecoveryStore"]
+        CLOCKPORT["IClock"]
+    end
+
+    subgraph ADAPTERS["In-memory Infrastructure adapters"]
+        ORDERREPO["InMemoryOrderRepository"]
+        OFFERPROVIDER["InMemoryProductOfferProvider"]
+        DISCOUNTPROVIDER["InMemoryDiscountPolicyProvider"]
+        INVENTORY["InMemoryInventoryReservationService"]
+        IDEMPOTENCY["InMemoryCheckoutIdempotencyStore"]
+        RECOVERY["InMemoryReservationRecoveryStore"]
+        CLOCK["SystemClock"]
+    end
+
+    ORDERREPO --> ORDERPORT
+    OFFERPROVIDER --> OFFERPORT
+    DISCOUNTPROVIDER --> DISCOUNTPORT
+    INVENTORY --> INVENTORYPORT
+    IDEMPOTENCY --> IDEMPORT
+    RECOVERY --> RECOVERYPORT
+    CLOCK --> CLOCKPORT
+
+    SNAPSHOT["Immutable Order snapshots; isolated Load; atomic expected-Version Save; atomic SavePayment uniqueness"]
+    INVENTORYRULES["Reserve replay by ReservationOperationKey; Release replay by ReservationId"]
+    IDEMRULES["Atomic IdempotencyKey claim and terminal replay"]
+    RECOVERYRULES["Recovery keyed by ReservationOperationKey"]
+    PROCESS["Thread-safe in one process; state lost on restart"]
+
+    ORDERREPO -. guarantees .-> SNAPSHOT
+    INVENTORY -. guarantees .-> INVENTORYRULES
+    IDEMPOTENCY -. guarantees .-> IDEMRULES
+    RECOVERY -. guarantees .-> RECOVERYRULES
+    ORDERREPO -. process lifecycle .-> PROCESS
+```
+
+The Order repository stores snapshots rather than Aggregate references, and every Load rehydrates a new Aggregate. All multi-step checks and state mutations use explicit synchronization inside their owning adapter. Concrete adapters and their port interfaces resolve to the same singleton instances.
+
+### Recommended Swagger Demo Flow
+
+The Development demo can exercise both a complete successful flow and a deterministic Reservation rejection without editing source code.
+
+```mermaid
+flowchart TD
+    RESET["Reset Demo"]
+    CREATE["Create Order"]
+    GETDRAFT["GET Draft Order"]
+    DISCOUNT["Optionally Apply Discount"]
+    CHECKOUT["Checkout with Idempotency-Key"]
+    REPLAY["Replay Checkout with same key"]
+    GETAWAITING["GET AwaitingPayment Order"]
+    FINAL{"Choose final operation"}
+    PAY["Confirm Payment"]
+    GETPAID["GET Paid Order"]
+    CANCEL["Cancel Order"]
+    GETCANCELLED["GET Cancelled Order"]
+    ADVANCE["Advance test clock and Expire"]
+    GETEXPIRED["GET Expired Order"]
+
+    RESET --> CREATE --> GETDRAFT --> DISCOUNT --> CHECKOUT --> REPLAY --> GETAWAITING --> FINAL
+    FINAL --> PAY --> GETPAID
+    FINAL --> CANCEL --> GETCANCELLED
+    FINAL --> ADVANCE --> GETEXPIRED
+
+    FAILURE["Select reservation-rejection scenario"]
+    FAILURE --> FAILURECREATE["Create Order"]
+    FAILURECREATE --> FAILURECHECKOUT["Checkout"]
+    FAILURECHECKOUT --> VERIFYDRAFT["Verify Order returned to Draft"]
+```
+
+SystemClock cannot be advanced through the public demo API; the expiration branch uses the controllable clock supplied by API integration tests. Swagger users can exercise payment or cancellation directly and use the documented failure scenarios.
 
 ## Domain model
 
@@ -175,7 +525,7 @@ Domain Events are framework-independent records. Domain has no MediatR, broker, 
 - API tests use `WebApplicationFactory<Program>`, `HttpClient`, real use cases, real Domain behavior, real adapters, deterministic seed data, and a controllable test clock.
 - Concurrency tests coordinate tasks without timing delays. No test depends on execution order and no test is skipped.
 
-Final verified count: **389 passing tests**.
+Final verified count: **393 passing tests**.
 
 ## Demo scenarios
 
