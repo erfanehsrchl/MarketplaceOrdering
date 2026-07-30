@@ -12,6 +12,12 @@ public sealed class InMemoryReservationRecoveryStore
     private readonly Dictionary<ReservationOperationKey,
         ReservationRecoveryRecord> _pending = [];
 
+    public void Reset()
+    {
+        lock (_syncRoot)
+            _pending.Clear();
+    }
+
     public Task<Result> UpsertAsync(
         ReservationRecoveryRecord record,
         CancellationToken cancellationToken)

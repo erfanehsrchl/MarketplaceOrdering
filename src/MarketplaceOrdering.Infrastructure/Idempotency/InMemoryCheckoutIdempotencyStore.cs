@@ -11,6 +11,12 @@ public sealed class InMemoryCheckoutIdempotencyStore
     private readonly object _syncRoot = new();
     private readonly Dictionary<IdempotencyKey, Entry> _entries = [];
 
+    public void Reset()
+    {
+        lock (_syncRoot)
+            _entries.Clear();
+    }
+
     public Task<Result<CheckoutIdempotencyClaim>> TryBeginAsync(
         IdempotencyKey idempotencyKey,
         OrderId orderId,

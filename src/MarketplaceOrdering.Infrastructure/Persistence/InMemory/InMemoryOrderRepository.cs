@@ -14,6 +14,15 @@ public sealed class InMemoryOrderRepository : IOrderRepository
     private readonly Dictionary<OrderId, StoredOrder> _orders = [];
     private readonly Dictionary<TransactionId, OrderId> _transactionOwners = [];
 
+    public void Reset()
+    {
+        lock (_syncRoot)
+        {
+            _orders.Clear();
+            _transactionOwners.Clear();
+        }
+    }
+
     public Task<Result<VersionedOrder>> LoadAsync(
         OrderId orderId,
         CancellationToken cancellationToken)

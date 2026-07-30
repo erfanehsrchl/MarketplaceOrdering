@@ -1,121 +1,244 @@
 # MarketplaceOrdering
 
-Implementation is being completed incrementally.
+`MarketplaceOrdering` is a .NET 8 multi-vendor marketplace ordering solution created for a Senior Backend Developer technical assignment. It demonstrates a Clean Architecture implementation of order editing, exact fulfillment planning, checkout consistency, inventory reservation, payment, terminal states, recovery, and a Swagger-enabled demonstration API. It is an interview-scale system and does not claim production readiness.
 
-Completed Phase 1: Solution skeleton and shared domain primitives.
+## Implemented capabilities
 
-Current completed phase: Thread-safe in-memory Infrastructure adapters.
+- Order creation and draft item editing
+- Discount-code selection, percentage and fixed discount evaluation, vendor eligibility, caps, and exact allocation
+- Exact multi-vendor fulfillment planning with deterministic tie-breaking
+- Atomic checkout idempotency claims and replay
+- Inventory reservation, operation-key idempotency, compensation, and idempotent release
+- Exact payment confirmation and global TransactionId uniqueness
+- Cancellation and payment-window expiration
+- Optimistic concurrency and isolated persistence snapshots
+- Pending release retry and orphan reservation recovery
+- ASP.NET Core Controllers, centralized HTTP error mapping, Swagger, and deterministic Development scenarios
 
-The marketplace is modeled as a single-currency system because multi-currency behavior is outside the assignment scope. Monetary values are represented as non-negative long integer amounts in the marketplace's smallest supported monetary unit.
+## Running the project
 
-## Assumptions
+```bash
+dotnet restore MarketplaceOrdering.sln
+dotnet build MarketplaceOrdering.sln
+dotnet test MarketplaceOrdering.sln
+dotnet run --project src/MarketplaceOrdering.Api
+```
 
-- Product identity inside an Order is based on ProductId.
-- ProductName is stored as a snapshot when the Product is first added.
-- Re-adding the same ProductId increases Quantity and preserves the original ProductName.
-- Maximum Quantity is 10 per Product.
-- Order Items are editable only while the Order is in Draft.
-- Price is intentionally not stored on OrderItem and will be determined during Checkout.
-- The Order Aggregate directly owns its private collection of OrderItem entities. A separate collection wrapper was intentionally avoided because the current item-management behavior is small enough to remain clear inside the Aggregate.
+The `http` launch profile listens on the URL defined in `launchSettings.json` and opens `swagger`; the `https` profile does the same over its configured HTTPS URL. Swagger is enabled only in Development.
 
-## Discount Domain
+## Solution structure
 
-- Percentage and Fixed Discounts are separate immutable types.
-- Percentage must be greater than zero and at most 30.
-- The marketplace remains single-currency.
-- MinimumProductsAmount is checked against the complete product total.
-- Discount is calculated only on eligible Vendor product amounts; Shipping is never discounted.
-- Percentage totals use `MidpointRounding.ToEven` and are rounded once before Vendor allocation.
-- Vendor allocation uses the Largest Remainder Method, with equal remainders resolved by VendorId.
-- Allocation preserves the exact total Discount.
-- `DiscountCalculation` is the single immutable result model; no separate `DiscountSnapshot` is currently needed.
+- `MarketplaceOrdering.Domain` — Aggregate, entities, value objects, business rules, algorithms, results, and Domain Events.
+- `MarketplaceOrdering.Application` — use cases, orchestration, output ports, and transport-neutral response models.
+- `MarketplaceOrdering.Infrastructure` — thread-safe in-memory implementations of Application ports.
+- `MarketplaceOrdering.Api` — ASP.NET Core composition root, controllers, HTTP contracts, error mapping, Swagger, and Development seeding.
+- `MarketplaceOrdering.Domain.Tests` — isolated business-rule and algorithm tests.
+- `MarketplaceOrdering.Application.Tests` — orchestration, failure-window, adapter, isolation, and concurrency tests.
+- `MarketplaceOrdering.Api.Tests` — in-memory TestServer integration and architecture tests.
 
-## Fulfillment
+## Dependency direction
 
-- Fulfillment must cover the complete Order; each Product may use at most two Vendors and the complete Order at most three.
-- Shipping is charged once per selected Vendor.
-- MinimumOrderAmount is checked against the Vendor product subtotal before Discount and excluding Shipping.
-- ShippingCost and MinimumOrderAmount are Vendor-level terms repeated consistently on Offers; delivery hours may vary per Product Offer.
-- The exact algorithm enumerates all Product allocation options and combines them with deterministic backtracking. Worst-case complexity is exponential in Product count, which is acceptable for the assignment constraints; high-scale systems could use branch-and-bound, dominance pruning, CP-SAT, or MILP.
-- Candidates are ranked by lowest TotalPayable, fewer Vendors, lower maximum delivery time, then deterministic allocation ordering.
-- Discount is evaluated per Candidate before ranking.
-- FulfillmentPlan is an immutable calculated Domain result.
+The production dependency direction is:
 
-## Checkout Domain
+```text
+Domain
+  ↑
+Application
+  ↑
+Infrastructure
+  ↑
+Api
+```
 
-- Order remains the only Aggregate Root. CheckoutAttempt and InventoryReservation are entities owned exclusively by Order.
-- Order retains one current CheckoutAttempt; historical attempt details will be represented through Domain Events or audit persistence.
-- Order enters Processing before external Reservation operations begin, and a matching FulfillmentPlan is attached before Reservation intent is recorded.
-- One Reservation intent exists for each `Order + CheckoutAttempt + Vendor`; its ReservationOperationKey is deterministic.
-- Inventory Reservations have an exact 15-minute lifetime supplied from the recorded reservation time.
-- Order enters AwaitingPayment only when every Plan Vendor has one Active, unexpired Reservation. PaymentExpiresAt is the earliest Reservation expiration.
-- A failed Checkout returns Order to Draft, but a new Checkout remains blocked while compensation is pending.
-- Final business failure and technical cleanup state are tracked separately.
-- The Domain records externally supplied outcomes and never performs external service calls.
+Domain references no other project. Application references Domain. Infrastructure implements Application ports and references Application and Domain. API composes Application and Infrastructure. HTTP concepts do not appear in Domain or Application.
 
-## Application
+## Domain model
 
-- Application orchestrates Domain behavior through concrete Use Case classes; business rules remain in Domain.
-- Use Cases do not use MediatR and do not have one interface per input operation.
-- External and persistence dependencies are modeled as output Ports.
-- Order persistence uses optimistic concurrency. Persisted Version is metadata represented outside Order by `VersionedOrder`.
-- Existing-Order mutation follows `Load → Domain behavior → Save(expectedVersion)`.
-- Version conflicts are returned to the caller and are not retried automatically.
-- Every asynchronous Application operation requires and propagates a `CancellationToken`.
-- `IClock` supplies deterministic occurrence times to Application operations.
-- Repository implementations must clear Domain Events only after successful persistence; Use Cases never clear them.
-- Checkout-specific offer, discount, inventory, idempotency, and recovery dependencies remain output Ports; the Checkout orchestration invokes them without providing adapters.
+`Order` is the only Aggregate Root and protects every state transition requiring consistency across its contents:
 
-## Checkout orchestration
+- `OrderItem` stores ProductId, a ProductName snapshot, and Quantity.
+- `SelectedDiscountCode` records the selected normalized code and selection time.
+- `CheckoutAttempt` owns planning, reservation, compensation, and completion state.
+- `InventoryReservation` records reservation intent, external identity, expiry, release, and retry progress.
+- `PaymentRecord` records the globally unique TransactionId, exact amount, and PaidAt.
+- `CancellationRecord` preserves reason, time, and the previous Order status.
+- `FulfillmentPlan` is an immutable calculated result.
+- `DiscountPolicy` is an immutable rule definition evaluated during planning.
 
-- The IdempotencyKey is atomically claimed before Order loading, and the claim retains its CheckoutAttemptId.
-- Processing is persisted before Offer or Discount dependencies are called, and the FulfillmentPlan is persisted before Inventory Reservation begins.
-- Reservation intent is persisted before each external Reserve call. Exactly one request is sent per selected Vendor in deterministic VendorId order using a deterministic ReservationOperationKey.
-- Every definitive Reservation success is persisted before the next Vendor is processed.
-- Definitive rejection triggers compensation. Confirmed Reservations are released in reverse acquisition order and every Release outcome is persisted separately.
-- An indeterminate Reservation result is not treated as rejection: the intent stays Pending, Checkout stays Processing, and Idempotency remains InProgress for later recovery.
-- If an external Reservation succeeds but its Active state cannot be persisted, immediate Release is attempted. Failed or indeterminate orphan cleanup is recorded through `IReservationRecoveryStore`.
-- AwaitingPayment is persisted before Idempotency completion. InProgress claims can repair completed or failed idempotency finalization from current Domain state.
-- The workflow uses optimistic concurrency and explicit compensation rather than a distributed transaction.
-- Cancellation is propagated and cannot automatically undo an external side effect that has already completed; known success enters the safe-cleanup path where possible.
+Internal entities do not have repositories because they are not independent consistency boundaries. Persisting them separately would allow state that bypasses Order invariants.
+
+## State machines
+
+Order transitions:
+
+```text
+Draft           → Processing
+Processing      → AwaitingPayment
+Processing      → Draft
+Draft           → Cancelled
+Processing      → Cancelled
+AwaitingPayment → Paid
+AwaitingPayment → Cancelled
+AwaitingPayment → Expired
+```
+
+CheckoutAttempt statuses are `Planning`, `Reserving`, `FullyReserved`, `Compensating`, `CompensationPending`, `Failed`, and `Completed`.
+
+InventoryReservation statuses are `Pending`, `Active`, `Rejected`, `ReleasePending`, and `Released`.
+
+Order status represents the business outcome. `ReleasePending` and `CompensationPending` separately represent technical cleanup, so cleanup failure cannot reverse a persisted business state.
+
+## Money model
+
+The assignment is single-currency. `Money` stores a non-negative `long` in the marketplace's smallest monetary unit. There is no floating-point monetary arithmetic and no Currency model because multi-currency behavior is outside scope. Addition, subtraction, and multiplication use checked arithmetic. Percentage discounts round once with `MidpointRounding.ToEven`.
+
+## Discount model
+
+- Fixed and percentage discounts are distinct immutable types.
+- Percentage is greater than zero and no more than 30.
+- Policies support active state, date windows, minimum product amount, maximum discount, and eligible Vendors.
+- `MinimumProductsAmount` is checked against the complete product amount.
+- Discount applies only to eligible Vendor product amounts; Shipping is never discounted.
+- The Largest Remainder Method allocates the exact discount total.
+- Equal allocation remainders use VendorId as a deterministic tie-break.
+- Allocated Vendor discounts always conserve the calculated total.
+
+## Fulfillment algorithm
+
+Only complete fulfillment is accepted. One Product may use at most two Vendors and one Order at most three. Candidate construction enforces stock, Vendor minimum order amount, consistent Vendor terms, and Shipping once per selected Vendor.
+
+Candidates are ranked by:
+
+1. Lowest TotalPayable.
+2. Fewer Vendors.
+3. Lower maximum delivery time.
+4. Deterministic allocation sequence.
+
+The implementation performs exact allocation enumeration followed by deterministic backtracking. Worst-case complexity is exponential in Product count, which is acceptable for the bounded assignment problem. Production alternatives include branch-and-bound, dominance pruning, CP-SAT, or MILP.
+
+## Checkout consistency model
+
+Checkout uses this ordering:
+
+```text
+Claim idempotency
+Load Order
+Persist Processing
+Fetch Offers and Discount
+Create Plan
+Persist Plan
+Persist Reservation intent
+Call Reserve
+Persist Reservation result
+Complete Checkout
+Persist AwaitingPayment
+Complete idempotency
+```
+
+`ReservationOperationKey` deterministically identifies `Order + CheckoutAttempt + Vendor`. Intent is persisted before the external call, and every known outcome is persisted before proceeding. There is no distributed transaction; optimistic local persistence, idempotent external identities, compensation, and recovery cover the relevant failure windows.
+
+## Failure and crash-window handling
+
+- Definitive Reservation rejection records failure and compensates confirmed Reservations in reverse acquisition order.
+- Release failure becomes `ReleasePending`; incomplete compensation becomes `CompensationPending`.
+- An indeterminate Reservation leaves the attempt Processing and the idempotency entry InProgress.
+- If external Reserve succeeds but Order persistence fails, immediate idempotent Release is attempted.
+- If that cleanup cannot be confirmed, `IReservationRecoveryStore` records an orphan Reservation.
+- If Order completion persists but idempotency completion fails, an InProgress replay reconciles from persisted Order state.
+- Pending Order-owned releases and orphan recovery records have separate Application recovery use cases.
 
 ## Payment
 
-- Payment is permitted only while the Order is AwaitingPayment and must exactly equal the attached FulfillmentPlan TotalPayable.
-- Every required Reservation must still be Active, and validity is evaluated at the supplied PaidAt. PaidAt exactly equal to expiration is invalid.
-- Replaying the same TransactionId and Amount is idempotent and preserves the original PaidAt.
-- Global TransactionId uniqueness and the expected Order Version are enforced atomically by `SavePaymentAsync`; no separate uniqueness pre-check or transaction registry exists.
-- Payment and expiration races are resolved by optimistic concurrency, so only one transition from the loaded AwaitingPayment Version can persist.
+Payment is allowed only from AwaitingPayment. Amount must exactly match FulfillmentPlan TotalPayable, all required Reservations must remain Active, and PaidAt must be strictly before every Reservation expiration. Replaying the same TransactionId and amount is idempotent and preserves the original PaidAt.
 
-## Cancellation
+`SavePaymentAsync` atomically combines expected-Version validation, global TransactionId ownership, snapshot persistence, and version increment. Payment and expiration racing from one loaded Version cannot both persist.
 
-- Draft, Processing, and AwaitingPayment Orders may be cancelled; Paid and Expired Orders may not.
-- Cancelled state is persisted before Inventory cleanup begins.
-- Repeated cancellation is idempotent and preserves the original reason, time, and previous status.
-- Release failures remain technical `ReleasePending` state and never reverse the Cancelled business status.
+## Cancellation and expiration
 
-## Expiration
+Draft, Processing, and AwaitingPayment Orders may be cancelled. Cancellation and expiration persist the final business state before attempting Reservation release. Expiration is allowed at or after PaymentExpiresAt; the exact boundary is valid for expiration and invalid for payment. Replays preserve the original reason/time or ExpiredAt. Cleanup failures do not reverse Cancelled or Expired state.
 
-- AwaitingPayment Orders expire at or after PaymentExpiresAt.
-- Expired state is persisted before Inventory cleanup begins.
-- Repeated expiration preserves the original ExpiredAt and raises no duplicate event.
-- Release failures never reverse the Expired business status.
+## Persistence and concurrency
 
-## Reservation recovery
+Infrastructure is intentionally in-memory. `InMemoryOrderRepository` stores explicit immutable snapshots, never caller Aggregate references. Every Load rehydrates an isolated Aggregate with no pending Domain Events. Version is repository metadata and is not part of the persisted Domain snapshot.
 
-- ReleasePending Reservations remain owned by Order and are retried through `RetryPendingReservationReleasesUseCase`.
-- `IReservationRecoveryStore` tracks orphan external Reservations that could not be represented inside persisted Order state.
-- `RecoverOrphanReservationsUseCase` releases those records using idempotent external Release semantics and preserves failed records for later retry.
-- Hosted scheduling and background execution remain deferred to Infrastructure or operational tooling.
+Save performs compare-and-replace under one lock and increments Version exactly once. Payment save validates Version and TransactionId ownership under the same lock. Domain Events are committed only after successful snapshot storage; every failure leaves pending Events intact. State is process-local and is lost on restart.
 
-## Infrastructure
+## Domain Events
 
-- Infrastructure implements the Application output Ports. The current adapters are intentionally in-memory because databases and external integrations are outside this assignment's scope; in-memory storage is an implementation detail, not an architectural project name.
-- Order persistence stores explicit immutable snapshots rather than Aggregate references. Every Load rehydrates an isolated Aggregate with no pending Domain Events, while repository Version remains metadata outside the persisted Domain snapshot.
-- Save performs the Version comparison and snapshot replacement atomically. SavePayment atomically combines Version validation, global TransactionId uniqueness, and snapshot persistence.
-- Pending Domain Events are committed only after successful persistence. Failed persistence leaves them intact.
-- Checkout Idempotency claims and terminal results are atomic and replayable.
-- Inventory Reservation uses OperationKey for idempotent replay. Request recording and all-or-nothing stock decrement occur atomically, and Release is idempotent by ReservationId.
-- Reservation recovery records are keyed by OperationKey and returned in deterministic order.
-- All adapters are thread-safe within one process. Their state is lost when the process restarts.
-- Production replacements would use a transactional database, unique constraints, durable Idempotency and Reservation recovery records, and real external adapters. The orchestration still does not introduce a distributed transaction.
+Domain Events are framework-independent records. Domain has no MediatR, broker, dispatcher, or handler dependency. The repository commit boundary clears successfully persisted pending Events. A production extension could persist them atomically to an Outbox and dispatch asynchronously.
+
+## Testing strategy
+
+- Domain unit tests cover value objects, Aggregate rules, discount allocation, and exact fulfillment.
+- Application tests cover orchestration, idempotency, compensation, crash windows, payment races, cancellation, expiration, and recovery.
+- Infrastructure tests cover snapshots, isolation, atomic version checks, TransactionId uniqueness, stock concurrency, replay, and thread safety.
+- API tests use `WebApplicationFactory<Program>`, `HttpClient`, real use cases, real Domain behavior, real adapters, deterministic seed data, and a controllable test clock.
+- Concurrency tests coordinate tasks without timing delays. No test depends on execution order and no test is skipped.
+
+Final verified count: **389 passing tests**.
+
+## Demo scenarios
+
+Fixed IDs:
+
+| Name | ID |
+|---|---|
+| Customer | `10000000-0000-0000-0000-000000000001` |
+| Product A | `20000000-0000-0000-0000-000000000001` |
+| Product B | `20000000-0000-0000-0000-000000000002` |
+| Vendor 1 | `30000000-0000-0000-0000-000000000001` |
+| Vendor 2 | `30000000-0000-0000-0000-000000000002` |
+| Vendor 3 | `30000000-0000-0000-0000-000000000003` |
+
+The default demand example uses Product A Quantity 3 and Product B Quantity 2. Vendor 1 plus Vendor 2 totals 635 using two Vendors. Vendor 3 also totals 635 using one Vendor, so deterministic ranking selects Vendor 3.
+
+Discount codes are `SAVE10`, `FIXED50`, `VENDOR3`, and `INACTIVE`.
+
+Development endpoints:
+
+- `POST /api/demo/reset`
+- `POST /api/demo/scenarios/default`
+- `POST /api/demo/scenarios/reservation-rejection`
+- `POST /api/demo/scenarios/reservation-indeterminate`
+- `POST /api/demo/scenarios/release-failure`
+- `POST /api/demo/reservation-recovery/run?maximumCount=100`
+
+Business endpoints include Order creation/editing/query, Checkout, Payment confirmation, cancellation, expiration, and pending-release retry. Checkout requires the `Idempotency-Key` header.
+
+Suggested Swagger flow:
+
+1. Reset demo.
+2. Create an Order with Product A Quantity 3 and Product B Quantity 2.
+3. Optionally apply `SAVE10`.
+4. Checkout using an `Idempotency-Key` header.
+5. Confirm Payment, cancel, or advance time in a test and expire.
+6. GET the Order to inspect final state.
+
+Demo endpoints return 404 outside Development.
+
+## Assumptions
+
+- One currency is used.
+- ProductName is a snapshot; re-adding ProductId preserves its original name.
+- Maximum Quantity is 10 per Product.
+- Price is resolved during Checkout.
+- A Vendor's ShippingCost and MinimumOrderAmount must be consistent across its Offers.
+- Delivery time may differ per Product Offer.
+- Minimum discount threshold uses total product amount.
+- Order retains one current CheckoutAttempt.
+- Reservation lifetime is exactly 15 minutes.
+- External operations are idempotent by their operation identity.
+
+## Production evolution
+
+A production system would introduce a relational database, database transactions for local atomic state, unique constraints, durable idempotency and recovery tables, a durable Outbox, real inventory/offer clients, adapter retry and timeout policies, a background recovery worker, observability, authentication, authorization, rate limiting, secrets management, and a horizontal-scaling strategy. Cross-system workflows would still avoid assuming a distributed transaction.
+
+## Trade-offs
+
+- One Aggregate gives strong ordering consistency; multiple Aggregates could improve independent scaling but require more coordination.
+- Exact search guarantees the assignment's optimal result; a solver or pruned search is more suitable at larger scale.
+- Explicit in-memory snapshots demonstrate isolation and concurrency without introducing EF Core.
+- Concrete use cases keep orchestration discoverable without MediatR or one interface per operation.
+- Domain Events model facts without requiring a dispatcher in this scope.
+- The API is included for demonstration and integration verification, not as a production edge design.
+- Currency and a separate OrderItems abstraction were avoided because current requirements do not justify them.
