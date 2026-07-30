@@ -4,7 +4,7 @@ Implementation is being completed incrementally.
 
 Completed Phase 1: Solution skeleton and shared domain primitives.
 
-Current completed phase: Checkout Aggregate state and Reservation tracking.
+Current completed phase: Application Ports and simple Order Use Cases.
 
 The marketplace is modeled as a single-currency system because multi-currency behavior is outside the assignment scope. Monetary values are represented as non-negative long integer amounts in the marketplace's smallest supported monetary unit.
 
@@ -52,3 +52,16 @@ The marketplace is modeled as a single-currency system because multi-currency be
 - A failed Checkout returns Order to Draft, but a new Checkout remains blocked while compensation is pending.
 - Final business failure and technical cleanup state are tracked separately.
 - The Domain records externally supplied outcomes and never performs external service calls.
+
+## Application
+
+- Application orchestrates Domain behavior through concrete Use Case classes; business rules remain in Domain.
+- Use Cases do not use MediatR and do not have one interface per input operation.
+- External and persistence dependencies are modeled as output Ports.
+- Order persistence uses optimistic concurrency. Persisted Version is metadata represented outside Order by `VersionedOrder`.
+- Existing-Order mutation follows `Load → Domain behavior → Save(expectedVersion)`.
+- Version conflicts are returned to the caller and are not retried automatically.
+- Every asynchronous Application operation requires and propagates a `CancellationToken`.
+- `IClock` supplies deterministic occurrence times to Application operations.
+- Repository implementations must clear Domain Events only after successful persistence; Use Cases never clear them.
+- Checkout-specific offer, discount, inventory, idempotency, and recovery Ports are defined for later orchestration but are not invoked in this phase.
