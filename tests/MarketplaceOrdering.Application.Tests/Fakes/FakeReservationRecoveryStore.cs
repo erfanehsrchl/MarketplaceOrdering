@@ -9,7 +9,10 @@ internal sealed class FakeReservationRecoveryStore
 {
     private readonly Dictionary<string, ReservationRecoveryRecord> _records = [];
     internal Error? UpsertFailure { get; set; }
+    internal Error? MarkResolvedFailure { get; set; }
     internal int UpsertCalls { get; private set; }
+    internal int GetPendingCalls { get; private set; }
+    internal int MarkResolvedCalls { get; private set; }
     internal CancellationToken CapturedCancellationToken { get; private set; }
     internal IReadOnlyCollection<ReservationRecoveryRecord> Records =>
         _records.Values
@@ -34,6 +37,7 @@ internal sealed class FakeReservationRecoveryStore
             int maximumCount,
             CancellationToken cancellationToken)
     {
+        GetPendingCalls++;
         CapturedCancellationToken = cancellationToken;
         IReadOnlyCollection<ReservationRecoveryRecord> records =
             Records.Take(maximumCount).ToArray();
@@ -46,7 +50,10 @@ internal sealed class FakeReservationRecoveryStore
         ReservationOperationKey operationKey,
         CancellationToken cancellationToken)
     {
+        MarkResolvedCalls++;
         CapturedCancellationToken = cancellationToken;
+        if (MarkResolvedFailure is not null)
+            return Task.FromResult(Result.Failure(MarkResolvedFailure));
         _records.Remove(operationKey.Value);
         return Task.FromResult(Result.Success());
     }

@@ -1,0 +1,3 @@
+namespace MarketplaceOrdering.Application.Checkout.RecoverOrphanReservations;
+
+public sealed record RecoverOrphanReservationsCommand(int MaximumCount);

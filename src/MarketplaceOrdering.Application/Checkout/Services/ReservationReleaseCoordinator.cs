@@ -41,7 +41,32 @@ public sealed class ReservationReleaseCoordinator
         var attempt = order.CheckoutAttempt;
         if (attempt is null || attempt.Id != checkoutAttemptId)
             return Result<long>.Failure(CheckoutErrors.AttemptMismatch);
+        return await ReleaseAsync(
+            order, currentVersion, checkoutAttemptId, cancellationToken);
+    }
 
+    public async Task<Result<long>> ReleaseForTerminalOrderAsync(
+        Order order,
+        long currentVersion,
+        CheckoutAttemptId checkoutAttemptId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(order);
+        if (order.Status is not (OrderStatus.Cancelled or OrderStatus.Expired))
+            return Result<long>.Failure(CheckoutErrors.NotAllowed);
+        if (order.CheckoutAttempt?.Id != checkoutAttemptId)
+            return Result<long>.Failure(CheckoutErrors.AttemptMismatch);
+        return await ReleaseAsync(
+            order, currentVersion, checkoutAttemptId, cancellationToken);
+    }
+
+    private async Task<Result<long>> ReleaseAsync(
+        Order order,
+        long currentVersion,
+        CheckoutAttemptId checkoutAttemptId,
+        CancellationToken cancellationToken)
+    {
+        var attempt = order.CheckoutAttempt!;
         var releasable = attempt.Reservations
             .Where(reservation =>
                 reservation.ReservationId.HasValue

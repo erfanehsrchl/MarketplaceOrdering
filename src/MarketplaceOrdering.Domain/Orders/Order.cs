@@ -1,6 +1,7 @@
 using MarketplaceOrdering.Domain.Checkout;
 using MarketplaceOrdering.Domain.Fulfillment;
 using MarketplaceOrdering.Domain.Orders.Events;
+using MarketplaceOrdering.Domain.Payments;
 using MarketplaceOrdering.Domain.Shared;
 using MarketplaceOrdering.Domain.ValueObjects;
 
@@ -10,6 +11,8 @@ public sealed class Order : AggregateRoot<OrderId>
 {
     private readonly List<OrderItem> _items = [];
     private CheckoutAttempt? _checkoutAttempt;
+    private PaymentRecord? _payment;
+    private CancellationRecord? _cancellation;
 
     private Order(
         OrderId orderId,
@@ -39,6 +42,9 @@ public sealed class Order : AggregateRoot<OrderId>
     public SelectedDiscountCode? SelectedDiscount { get; private set; }
     public CheckoutAttempt? CheckoutAttempt => _checkoutAttempt;
     public DateTimeOffset? PaymentExpiresAt => _checkoutAttempt?.PaymentExpiresAt;
+    public PaymentRecord? Payment => _payment;
+    public CancellationRecord? Cancellation => _cancellation;
+    public DateTimeOffset? ExpiredAt { get; private set; }
 
     public IReadOnlyCollection<ProductDemand> GetDemandSnapshot() =>
         _items.Select(item => new ProductDemand(
@@ -146,7 +152,8 @@ public sealed class Order : AggregateRoot<OrderId>
         var attempt = MatchingAttempt(attemptId);
         if (attempt.IsFailure) return Result.Failure(attempt.Error);
         if (Status != OrderStatus.Processing && !(Status == OrderStatus.Draft
-            && attempt.Value.Status == CheckoutAttemptStatus.CompensationPending))
+            && attempt.Value.Status == CheckoutAttemptStatus.CompensationPending)
+            && Status is not (OrderStatus.Cancelled or OrderStatus.Expired))
             return Result.Failure(CheckoutErrors.NotAllowed);
         var reservation = attempt.Value.Find(reservationId);
         if (reservation is null) return Result.Failure(CheckoutErrors.ReservationNotFound);
@@ -162,7 +169,8 @@ public sealed class Order : AggregateRoot<OrderId>
         var attempt = MatchingAttempt(attemptId);
         if (attempt.IsFailure) return Result.Failure(attempt.Error);
         if (Status != OrderStatus.Processing && !(Status == OrderStatus.Draft
-            && attempt.Value.Status == CheckoutAttemptStatus.CompensationPending))
+            && attempt.Value.Status == CheckoutAttemptStatus.CompensationPending)
+            && Status is not (OrderStatus.Cancelled or OrderStatus.Expired))
             return Result.Failure(CheckoutErrors.NotAllowed);
         var reservation = attempt.Value.Find(reservationId);
         if (reservation is null) return Result.Failure(CheckoutErrors.ReservationNotFound);
@@ -239,6 +247,112 @@ public sealed class Order : AggregateRoot<OrderId>
         attempt.Value.Complete(completedAt, expiresAt); Status = OrderStatus.AwaitingPayment;
         RaiseDomainEvent(new OrderAwaitingPaymentDomainEvent(Id, attemptId,
             attempt.Value.FulfillmentPlan.TotalPayable, expiresAt, completedAt));
+        return Result.Success();
+    }
+
+    public Result ConfirmPayment(
+        TransactionId transactionId,
+        MarketplaceOrdering.Domain.Money.Money amount,
+        DateTimeOffset paidAt)
+    {
+        if (Status == OrderStatus.Paid && _payment is not null)
+        {
+            return _payment.TransactionId == transactionId
+                   && _payment.Amount == amount
+                ? Result.Success()
+                : Result.Failure(
+                    PaymentErrors.AlreadyConfirmedWithDifferentData);
+        }
+
+        if (Status != OrderStatus.AwaitingPayment)
+            return Result.Failure(PaymentErrors.NotAllowed);
+        var attempt = _checkoutAttempt;
+        if (attempt is null
+            || attempt.Status != CheckoutAttemptStatus.Completed
+            || attempt.FulfillmentPlan is null
+            || !attempt.PaymentExpiresAt.HasValue)
+            return Result.Failure(PaymentErrors.ReservationsInvalid);
+        if (amount != attempt.FulfillmentPlan.TotalPayable)
+            return Result.Failure(PaymentErrors.AmountMismatch);
+
+        var reservations = attempt.Reservations;
+        if (reservations.Count != attempt.FulfillmentPlan.VendorCount
+            || reservations.Any(reservation =>
+                reservation.Status != InventoryReservationStatus.Active
+                || !reservation.ReservationId.HasValue
+                || !reservation.ExpiresAt.HasValue)
+            || !reservations.Select(reservation => reservation.VendorId)
+                .ToHashSet()
+                .SetEquals(attempt.FulfillmentPlan.Vendors.Select(
+                    vendor => vendor.VendorId)))
+            return Result.Failure(PaymentErrors.ReservationsInvalid);
+        if (reservations.Any(reservation =>
+                paidAt >= reservation.ExpiresAt!.Value))
+            return Result.Failure(PaymentErrors.ReservationExpired);
+
+        var payment = PaymentRecord.Create(transactionId, amount, paidAt);
+        if (payment.IsFailure) return Result.Failure(payment.Error);
+        _payment = payment.Value;
+        Status = OrderStatus.Paid;
+        RaiseDomainEvent(new OrderPaidDomainEvent(
+            Id,
+            attempt.Id,
+            transactionId,
+            amount,
+            paidAt));
+        return Result.Success();
+    }
+
+    public Result Cancel(
+        CancellationReason reason,
+        DateTimeOffset cancelledAt)
+    {
+        ArgumentNullException.ThrowIfNull(reason);
+        if (Status == OrderStatus.Cancelled)
+            return Result.Success();
+        if (Status is not (OrderStatus.Draft
+            or OrderStatus.Processing
+            or OrderStatus.AwaitingPayment))
+            return Result.Failure(CancellationErrors.NotAllowed);
+
+        var previousStatus = Status;
+        _cancellation = new CancellationRecord(
+            reason, cancelledAt, previousStatus);
+        Status = OrderStatus.Cancelled;
+        var hasConfirmedReservations = _checkoutAttempt?.Reservations.Any(
+            reservation => reservation.ReservationId.HasValue
+                && reservation.Status is InventoryReservationStatus.Active
+                    or InventoryReservationStatus.ReleasePending
+                    or InventoryReservationStatus.Released) == true;
+        RaiseDomainEvent(new OrderCancelledDomainEvent(
+            Id,
+            previousStatus,
+            reason,
+            cancelledAt,
+            hasConfirmedReservations));
+        return Result.Success();
+    }
+
+    public Result Expire(DateTimeOffset expiredAt)
+    {
+        if (Status == OrderStatus.Expired)
+            return Result.Success();
+        if (Status != OrderStatus.AwaitingPayment
+            || _checkoutAttempt?.Status != CheckoutAttemptStatus.Completed)
+            return Result.Failure(ExpirationErrors.NotAllowed);
+        if (!_checkoutAttempt.PaymentExpiresAt.HasValue)
+            return Result.Failure(
+                ExpirationErrors.PaymentExpirationMissing);
+        if (expiredAt < _checkoutAttempt.PaymentExpiresAt.Value)
+            return Result.Failure(ExpirationErrors.NotDue);
+
+        ExpiredAt = expiredAt;
+        Status = OrderStatus.Expired;
+        RaiseDomainEvent(new OrderExpiredDomainEvent(
+            Id,
+            _checkoutAttempt.Id,
+            expiredAt,
+            _checkoutAttempt.PaymentExpiresAt.Value));
         return Result.Success();
     }
 

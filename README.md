@@ -4,7 +4,7 @@ Implementation is being completed incrementally.
 
 Completed Phase 1: Solution skeleton and shared domain primitives.
 
-Current completed phase: Checkout Application orchestration and compensation.
+Current completed phase: Payment, cancellation, expiration, and Reservation recovery.
 
 The marketplace is modeled as a single-currency system because multi-currency behavior is outside the assignment scope. Monetary values are represented as non-negative long integer amounts in the marketplace's smallest supported monetary unit.
 
@@ -78,3 +78,32 @@ The marketplace is modeled as a single-currency system because multi-currency be
 - AwaitingPayment is persisted before Idempotency completion. InProgress claims can repair completed or failed idempotency finalization from current Domain state.
 - The workflow uses optimistic concurrency and explicit compensation rather than a distributed transaction.
 - Cancellation is propagated and cannot automatically undo an external side effect that has already completed; known success enters the safe-cleanup path where possible.
+
+## Payment
+
+- Payment is permitted only while the Order is AwaitingPayment and must exactly equal the attached FulfillmentPlan TotalPayable.
+- Every required Reservation must still be Active, and validity is evaluated at the supplied PaidAt. PaidAt exactly equal to expiration is invalid.
+- Replaying the same TransactionId and Amount is idempotent and preserves the original PaidAt.
+- Global TransactionId uniqueness and the expected Order Version are enforced atomically by `SavePaymentAsync`; no separate uniqueness pre-check or transaction registry exists.
+- Payment and expiration races are resolved by optimistic concurrency, so only one transition from the loaded AwaitingPayment Version can persist.
+
+## Cancellation
+
+- Draft, Processing, and AwaitingPayment Orders may be cancelled; Paid and Expired Orders may not.
+- Cancelled state is persisted before Inventory cleanup begins.
+- Repeated cancellation is idempotent and preserves the original reason, time, and previous status.
+- Release failures remain technical `ReleasePending` state and never reverse the Cancelled business status.
+
+## Expiration
+
+- AwaitingPayment Orders expire at or after PaymentExpiresAt.
+- Expired state is persisted before Inventory cleanup begins.
+- Repeated expiration preserves the original ExpiredAt and raises no duplicate event.
+- Release failures never reverse the Expired business status.
+
+## Reservation recovery
+
+- ReleasePending Reservations remain owned by Order and are retried through `RetryPendingReservationReleasesUseCase`.
+- `IReservationRecoveryStore` tracks orphan external Reservations that could not be represented inside persisted Order state.
+- `RecoverOrphanReservationsUseCase` releases those records using idempotent external Release semantics and preserves failed records for later retry.
+- Hosted scheduling and background execution remain deferred to Infrastructure or operational tooling.

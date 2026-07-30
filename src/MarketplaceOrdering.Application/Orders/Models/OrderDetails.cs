@@ -15,7 +15,11 @@ public sealed record OrderDetails
         long version,
         IReadOnlyCollection<OrderItemDetails> items,
         SelectedDiscountDetails? selectedDiscount,
-        CheckoutAttemptSummary? checkoutAttempt)
+        CheckoutAttemptSummary? checkoutAttempt,
+        PaymentDetails? payment = null,
+        CancellationDetails? cancellation = null,
+        DateTimeOffset? expiredAt = null,
+        bool hasPendingReservationReleases = false)
     {
         ArgumentNullException.ThrowIfNull(items);
         OrderId = orderId;
@@ -27,6 +31,10 @@ public sealed record OrderDetails
         _items = Array.AsReadOnly(items.ToArray());
         SelectedDiscount = selectedDiscount;
         CheckoutAttempt = checkoutAttempt;
+        Payment = payment;
+        Cancellation = cancellation;
+        ExpiredAt = expiredAt;
+        HasPendingReservationReleases = hasPendingReservationReleases;
     }
 
     public Guid OrderId { get; }
@@ -38,4 +46,8 @@ public sealed record OrderDetails
     public IReadOnlyCollection<OrderItemDetails> Items => _items;
     public SelectedDiscountDetails? SelectedDiscount { get; }
     public CheckoutAttemptSummary? CheckoutAttempt { get; }
+    public PaymentDetails? Payment { get; }
+    public CancellationDetails? Cancellation { get; }
+    public DateTimeOffset? ExpiredAt { get; }
+    public bool HasPendingReservationReleases { get; }
 }

@@ -1,4 +1,5 @@
 using MarketplaceOrdering.Application.Orders.Models;
+using MarketplaceOrdering.Domain.Checkout;
 using MarketplaceOrdering.Domain.Orders;
 
 namespace MarketplaceOrdering.Application.Orders.Mapping;
@@ -36,6 +37,22 @@ public static class OrderDetailsMapper
                 item.ProductName.Value,
                 item.Quantity.Value)).ToArray(),
             selectedDiscount,
-            checkout);
+            checkout,
+            order.Payment is { } payment
+                ? new PaymentDetails(
+                    payment.TransactionId.Value,
+                    payment.Amount.Amount,
+                    payment.PaidAt)
+                : null,
+            order.Cancellation is { } cancellation
+                ? new CancellationDetails(
+                    cancellation.Reason.Value,
+                    cancellation.CancelledAt,
+                    cancellation.PreviousStatus.ToString())
+                : null,
+            order.ExpiredAt,
+            order.CheckoutAttempt?.Reservations.Any(
+                reservation => reservation.Status ==
+                    InventoryReservationStatus.ReleasePending) == true);
     }
 }

@@ -19,4 +19,10 @@ public interface IOrderRepository
         Order order,
         long expectedVersion,
         CancellationToken cancellationToken);
+
+    Task<Result<long>> SavePaymentAsync(
+        Order order,
+        long expectedVersion,
+        TransactionId transactionId,
+        CancellationToken cancellationToken);
 }
