@@ -4,7 +4,7 @@ Implementation is being completed incrementally.
 
 Completed Phase 1: Solution skeleton and shared domain primitives.
 
-Current completed phase: Payment, cancellation, expiration, and Reservation recovery.
+Current completed phase: Thread-safe in-memory Infrastructure adapters.
 
 The marketplace is modeled as a single-currency system because multi-currency behavior is outside the assignment scope. Monetary values are represented as non-negative long integer amounts in the marketplace's smallest supported monetary unit.
 
@@ -107,3 +107,15 @@ The marketplace is modeled as a single-currency system because multi-currency be
 - `IReservationRecoveryStore` tracks orphan external Reservations that could not be represented inside persisted Order state.
 - `RecoverOrphanReservationsUseCase` releases those records using idempotent external Release semantics and preserves failed records for later retry.
 - Hosted scheduling and background execution remain deferred to Infrastructure or operational tooling.
+
+## Infrastructure
+
+- Infrastructure implements the Application output Ports. The current adapters are intentionally in-memory because databases and external integrations are outside this assignment's scope; in-memory storage is an implementation detail, not an architectural project name.
+- Order persistence stores explicit immutable snapshots rather than Aggregate references. Every Load rehydrates an isolated Aggregate with no pending Domain Events, while repository Version remains metadata outside the persisted Domain snapshot.
+- Save performs the Version comparison and snapshot replacement atomically. SavePayment atomically combines Version validation, global TransactionId uniqueness, and snapshot persistence.
+- Pending Domain Events are committed only after successful persistence. Failed persistence leaves them intact.
+- Checkout Idempotency claims and terminal results are atomic and replayable.
+- Inventory Reservation uses OperationKey for idempotent replay. Request recording and all-or-nothing stock decrement occur atomically, and Release is idempotent by ReservationId.
+- Reservation recovery records are keyed by OperationKey and returned in deterministic order.
+- All adapters are thread-safe within one process. Their state is lost when the process restarts.
+- Production replacements would use a transactional database, unique constraints, durable Idempotency and Reservation recovery records, and real external adapters. The orchestration still does not introduce a distributed transaction.

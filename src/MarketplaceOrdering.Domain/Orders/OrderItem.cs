@@ -33,6 +33,12 @@ public sealed class OrderItem
             : Result<OrderItem>.Success(new OrderItem(product, quantity));
     }
 
+    internal static OrderItem Rehydrate(
+        ProductId productId,
+        ProductName productName,
+        Quantity quantity) =>
+        new(new ProductReference(productId, productName), quantity);
+
     internal Result IncreaseQuantity(Quantity addedQuantity)
     {
         if (addedQuantity.Value <= 0)

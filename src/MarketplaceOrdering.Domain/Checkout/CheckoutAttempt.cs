@@ -19,6 +19,27 @@ public sealed class CheckoutAttempt
     public DateTimeOffset? PaymentExpiresAt { get; private set; }
 
     internal static CheckoutAttempt Create(CheckoutAttemptId id, DateTimeOffset at) => new(id, at);
+    internal static CheckoutAttempt Rehydrate(
+        CheckoutAttemptId id,
+        CheckoutAttemptStatus status,
+        DateTimeOffset startedAt,
+        FulfillmentPlan? fulfillmentPlan,
+        IEnumerable<InventoryReservation> reservations,
+        CheckoutFailure? failure,
+        DateTimeOffset? completedAt,
+        DateTimeOffset? paymentExpiresAt)
+    {
+        var attempt = new CheckoutAttempt(id, startedAt)
+        {
+            Status = status,
+            FulfillmentPlan = fulfillmentPlan,
+            Failure = failure,
+            CompletedAt = completedAt,
+            PaymentExpiresAt = paymentExpiresAt
+        };
+        attempt._reservations.AddRange(reservations);
+        return attempt;
+    }
     internal Result AttachPlan(FulfillmentPlan plan)
     {
         if (FulfillmentPlan is not null) return Result.Failure(CheckoutErrors.PlanAlreadyAttached);

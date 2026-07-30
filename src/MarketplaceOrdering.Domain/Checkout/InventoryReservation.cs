@@ -24,6 +24,36 @@ public sealed class InventoryReservation
     internal static Result<InventoryReservation> CreatePending(VendorId vendorId, ReservationOperationKey key, DateTimeOffset requestedAt) =>
         Result<InventoryReservation>.Success(new InventoryReservation(vendorId, key, requestedAt));
 
+    internal static InventoryReservation Rehydrate(
+        VendorId vendorId,
+        ReservationOperationKey operationKey,
+        InventoryReservationStatus status,
+        DateTimeOffset requestedAt,
+        ReservationId? reservationId,
+        DateTimeOffset? reservedAt,
+        DateTimeOffset? expiresAt,
+        DateTimeOffset? releasedAt,
+        string? failureCode,
+        int releaseAttemptCount,
+        string? lastReleaseErrorCode,
+        DateTimeOffset? lastReleaseAttemptedAt)
+    {
+        var reservation = new InventoryReservation(
+            vendorId, operationKey, requestedAt)
+        {
+            Status = status,
+            ReservationId = reservationId,
+            ReservedAt = reservedAt,
+            ExpiresAt = expiresAt,
+            ReleasedAt = releasedAt,
+            FailureCode = failureCode,
+            ReleaseAttemptCount = releaseAttemptCount,
+            LastReleaseErrorCode = lastReleaseErrorCode,
+            LastReleaseAttemptedAt = lastReleaseAttemptedAt
+        };
+        return reservation;
+    }
+
     internal Result<bool> MarkActive(ReservationId reservationId, DateTimeOffset reservedAt)
     {
         if (Status == InventoryReservationStatus.Active)

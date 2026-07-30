@@ -28,4 +28,10 @@ public sealed class PaymentRecord
             ? Result<PaymentRecord>.Failure(PaymentErrors.AmountNotPositive)
             : Result<PaymentRecord>.Success(
                 new PaymentRecord(transactionId, amount, paidAt));
+
+    internal static PaymentRecord Rehydrate(
+        TransactionId transactionId,
+        MoneyValue amount,
+        DateTimeOffset paidAt) =>
+        new(transactionId, amount, paidAt);
 }

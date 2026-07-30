@@ -17,4 +17,10 @@ public sealed class CancellationRecord
     public CancellationReason Reason { get; }
     public DateTimeOffset CancelledAt { get; }
     public OrderStatus PreviousStatus { get; }
+
+    internal static CancellationRecord Rehydrate(
+        CancellationReason reason,
+        DateTimeOffset cancelledAt,
+        OrderStatus previousStatus) =>
+        new(reason, cancelledAt, previousStatus);
 }

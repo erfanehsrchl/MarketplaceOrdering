@@ -46,6 +46,32 @@ public sealed class Order : AggregateRoot<OrderId>
     public CancellationRecord? Cancellation => _cancellation;
     public DateTimeOffset? ExpiredAt { get; private set; }
 
+    internal static Order Rehydrate(
+        OrderId orderId,
+        CustomerId customerId,
+        DeliveryAddress deliveryAddress,
+        IEnumerable<OrderItem> items,
+        OrderStatus status,
+        DateTimeOffset createdAt,
+        SelectedDiscountCode? selectedDiscount,
+        CheckoutAttempt? checkoutAttempt,
+        PaymentRecord? payment,
+        CancellationRecord? cancellation,
+        DateTimeOffset? expiredAt)
+    {
+        var order = new Order(
+            orderId, customerId, deliveryAddress, items, createdAt)
+        {
+            Status = status,
+            SelectedDiscount = selectedDiscount,
+            _checkoutAttempt = checkoutAttempt,
+            _payment = payment,
+            _cancellation = cancellation,
+            ExpiredAt = expiredAt
+        };
+        return order;
+    }
+
     public IReadOnlyCollection<ProductDemand> GetDemandSnapshot() =>
         _items.Select(item => new ProductDemand(
             new ProductReference(item.ProductId, item.ProductName), item.Quantity)).ToArray();
