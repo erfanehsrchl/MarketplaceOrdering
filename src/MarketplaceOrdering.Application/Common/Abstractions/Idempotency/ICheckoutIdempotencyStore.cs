@@ -8,6 +8,7 @@ public interface ICheckoutIdempotencyStore
     Task<Result<CheckoutIdempotencyClaim>> TryBeginAsync(
         IdempotencyKey idempotencyKey,
         OrderId orderId,
+        CheckoutAttemptId proposedCheckoutAttemptId,
         DateTimeOffset startedAt,
         CancellationToken cancellationToken);
 

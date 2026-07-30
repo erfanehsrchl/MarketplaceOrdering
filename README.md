@@ -4,7 +4,7 @@ Implementation is being completed incrementally.
 
 Completed Phase 1: Solution skeleton and shared domain primitives.
 
-Current completed phase: Application Ports and simple Order Use Cases.
+Current completed phase: Checkout Application orchestration and compensation.
 
 The marketplace is modeled as a single-currency system because multi-currency behavior is outside the assignment scope. Monetary values are represented as non-negative long integer amounts in the marketplace's smallest supported monetary unit.
 
@@ -64,4 +64,17 @@ The marketplace is modeled as a single-currency system because multi-currency be
 - Every asynchronous Application operation requires and propagates a `CancellationToken`.
 - `IClock` supplies deterministic occurrence times to Application operations.
 - Repository implementations must clear Domain Events only after successful persistence; Use Cases never clear them.
-- Checkout-specific offer, discount, inventory, idempotency, and recovery Ports are defined for later orchestration but are not invoked in this phase.
+- Checkout-specific offer, discount, inventory, idempotency, and recovery dependencies remain output Ports; the Checkout orchestration invokes them without providing adapters.
+
+## Checkout orchestration
+
+- The IdempotencyKey is atomically claimed before Order loading, and the claim retains its CheckoutAttemptId.
+- Processing is persisted before Offer or Discount dependencies are called, and the FulfillmentPlan is persisted before Inventory Reservation begins.
+- Reservation intent is persisted before each external Reserve call. Exactly one request is sent per selected Vendor in deterministic VendorId order using a deterministic ReservationOperationKey.
+- Every definitive Reservation success is persisted before the next Vendor is processed.
+- Definitive rejection triggers compensation. Confirmed Reservations are released in reverse acquisition order and every Release outcome is persisted separately.
+- An indeterminate Reservation result is not treated as rejection: the intent stays Pending, Checkout stays Processing, and Idempotency remains InProgress for later recovery.
+- If an external Reservation succeeds but its Active state cannot be persisted, immediate Release is attempted. Failed or indeterminate orphan cleanup is recorded through `IReservationRecoveryStore`.
+- AwaitingPayment is persisted before Idempotency completion. InProgress claims can repair completed or failed idempotency finalization from current Domain state.
+- The workflow uses optimistic concurrency and explicit compensation rather than a distributed transaction.
+- Cancellation is propagated and cannot automatically undo an external side effect that has already completed; known success enters the safe-cleanup path where possible.

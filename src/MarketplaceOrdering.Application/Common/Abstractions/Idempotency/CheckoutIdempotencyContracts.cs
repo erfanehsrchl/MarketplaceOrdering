@@ -15,10 +15,15 @@ public sealed record CheckoutOperationResult(
 
 public abstract record CheckoutIdempotencyClaim;
 
-public sealed record CheckoutIdempotencyStarted : CheckoutIdempotencyClaim;
-public sealed record CheckoutIdempotencyInProgress : CheckoutIdempotencyClaim;
+public sealed record CheckoutIdempotencyStarted(
+    OrderId OrderId,
+    CheckoutAttemptId CheckoutAttemptId) : CheckoutIdempotencyClaim;
+public sealed record CheckoutIdempotencyInProgress(
+    OrderId OrderId,
+    CheckoutAttemptId CheckoutAttemptId) : CheckoutIdempotencyClaim;
 public sealed record CheckoutIdempotencyConflict(
-    OrderId ExistingOrderId) : CheckoutIdempotencyClaim;
+    OrderId ExistingOrderId,
+    CheckoutAttemptId ExistingCheckoutAttemptId) : CheckoutIdempotencyClaim;
 public sealed record CheckoutIdempotencyCompleted(
     CheckoutOperationResult Result) : CheckoutIdempotencyClaim;
 public sealed record CheckoutIdempotencyFailed(
