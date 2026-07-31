@@ -1,6 +1,5 @@
 using FluentAssertions;
 using MarketplaceOrdering.Application.Common.Abstractions.Idempotency;
-using MarketplaceOrdering.Application.Common.Models;
 using MarketplaceOrdering.Domain.Checkout;
 using MarketplaceOrdering.Domain.Money;
 using MarketplaceOrdering.Domain.Orders;
@@ -98,8 +97,7 @@ public sealed class CheckoutOrderIdempotencyTests
         var completed = await context.Handler.Handle(
             command, CancellationToken.None);
         var attemptId = completed.Value.CheckoutAttemptId;
-        context.Repository.LoadedOrder =
-            new VersionedOrder(context.Order, completed.Value.Version);
+        context.Repository.LoadedOrder = context.Order;
         context.Idempotency.ClaimOverride =
             new CheckoutIdempotencyInProgress(context.Order.Id, attemptId);
 

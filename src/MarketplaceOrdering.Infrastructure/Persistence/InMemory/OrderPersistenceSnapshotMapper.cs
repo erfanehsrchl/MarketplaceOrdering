@@ -6,11 +6,16 @@ namespace MarketplaceOrdering.Infrastructure.Persistence.InMemory;
 
 internal static class OrderPersistenceSnapshotMapper
 {
-    internal static OrderPersistenceSnapshot Capture(Order order)
+    internal static OrderPersistenceSnapshot Capture(
+        Order order,
+        long persistedVersion)
     {
         ArgumentNullException.ThrowIfNull(order);
+        if (persistedVersion < 1)
+            throw new ArgumentOutOfRangeException(nameof(persistedVersion));
         return new OrderPersistenceSnapshot(
             order.Id,
+            persistedVersion,
             order.CustomerId,
             order.DeliveryAddress,
             order.Status,
@@ -47,7 +52,7 @@ internal static class OrderPersistenceSnapshotMapper
                 snapshot.CheckoutAttempt.Failure,
                 snapshot.CheckoutAttempt.CompletedAt,
                 snapshot.CheckoutAttempt.PaymentExpiresAt);
-        return Order.Rehydrate(
+        var order = Order.Rehydrate(
             snapshot.OrderId,
             snapshot.CustomerId,
             snapshot.DeliveryAddress,
@@ -70,6 +75,8 @@ internal static class OrderPersistenceSnapshotMapper
                     snapshot.Cancellation.CancelledAt,
                     snapshot.Cancellation.PreviousStatus),
             snapshot.ExpiredAt);
+        order.UpdatePersistenceVersion(snapshot.Version);
+        return order;
     }
 
     private static CheckoutAttemptSnapshot? Capture(CheckoutAttempt? attempt) =>

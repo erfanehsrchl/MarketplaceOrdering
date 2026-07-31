@@ -38,25 +38,25 @@ public sealed class ConfirmPaymentCommandHandler
             orderId.Value, cancellationToken);
         if (loaded.IsFailure)
             return Result<ConfirmPaymentResult>.Failure(loaded.Error);
-        var confirmed = loaded.Value.Order.ConfirmPayment(
+        var order = loaded.Value;
+        var confirmed = order.ConfirmPayment(
             transactionId.Value, amount.Value, command.PaidAt);
         if (confirmed.IsFailure)
             return Result<ConfirmPaymentResult>.Failure(confirmed.Error);
         var saved = await _orderRepository.SavePaymentAsync(
-            loaded.Value.Order,
-            loaded.Value.Version,
+            order,
             transactionId.Value,
             cancellationToken);
         if (saved.IsFailure)
             return Result<ConfirmPaymentResult>.Failure(saved.Error);
-        var payment = loaded.Value.Order.Payment!;
+        var payment = order.Payment!;
         return Result<ConfirmPaymentResult>.Success(
             new ConfirmPaymentResult(
-                loaded.Value.Order.Id.Value,
-                loaded.Value.Order.Status.ToString(),
+                order.Id.Value,
+                order.Status.ToString(),
                 payment.TransactionId.Value,
                 payment.Amount.Amount,
                 payment.PaidAt,
-                saved.Value));
+                order.Version));
     }
 }

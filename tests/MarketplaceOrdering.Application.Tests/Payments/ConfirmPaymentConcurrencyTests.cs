@@ -1,6 +1,5 @@
 using FluentAssertions;
 using MarketplaceOrdering.Application.Common.Errors;
-using MarketplaceOrdering.Application.Common.Models;
 using MarketplaceOrdering.Application.Tests.Checkout;
 using MarketplaceOrdering.Application.Tests.Fakes;
 using MarketplaceOrdering.Domain.Discounts;
@@ -26,17 +25,19 @@ public sealed class ConfirmPaymentConcurrencyTests
             paymentSnapshot.PaymentExpiresAt!.Value.AddSeconds(-1));
         expirationSnapshot.Expire(
             expirationSnapshot.PaymentExpiresAt!.Value);
+        ApplicationTestData.Persisted(expirationSnapshot, 20);
         var repository = Repository(paymentSnapshot, 20);
 
         var paymentSave = await repository.SavePaymentAsync(
-            paymentSnapshot, 20, transactionId, CancellationToken.None);
+            paymentSnapshot, transactionId, CancellationToken.None);
         var expirationSave = await repository.SaveAsync(
-            expirationSnapshot, 20, CancellationToken.None);
+            expirationSnapshot, CancellationToken.None);
 
         paymentSave.Value.Should().Be(21);
         expirationSave.Error.Should().Be(
             ApplicationErrors.OrderVersionConflict);
-        repository.LoadedOrder!.Order.Status.Should().Be(OrderStatus.Paid);
+        expirationSnapshot.Version.Should().Be(20);
+        repository.LoadedOrder!.Status.Should().Be(OrderStatus.Paid);
     }
 
     [Fact]
@@ -52,23 +53,26 @@ public sealed class ConfirmPaymentConcurrencyTests
             paymentSnapshot.PaymentExpiresAt!.Value.AddSeconds(-1));
         expirationSnapshot.Expire(
             expirationSnapshot.PaymentExpiresAt!.Value);
+        ApplicationTestData.Persisted(paymentSnapshot, 20);
         var repository = Repository(expirationSnapshot, 20);
 
         var expirationSave = await repository.SaveAsync(
-            expirationSnapshot, 20, CancellationToken.None);
+            expirationSnapshot, CancellationToken.None);
         var paymentSave = await repository.SavePaymentAsync(
-            paymentSnapshot, 20, transactionId, CancellationToken.None);
+            paymentSnapshot, transactionId, CancellationToken.None);
 
         expirationSave.Value.Should().Be(21);
         paymentSave.Error.Should().Be(
             ApplicationErrors.OrderVersionConflict);
-        repository.LoadedOrder!.Order.Status.Should().Be(OrderStatus.Expired);
+        paymentSnapshot.Version.Should().Be(20);
+        repository.ClaimedTransactionIds.Should().BeEmpty();
+        repository.LoadedOrder!.Status.Should().Be(OrderStatus.Expired);
     }
 
     private static FakeOrderRepository Repository(Order order, long version) =>
         new()
         {
-            LoadedOrder = new VersionedOrder(order, version),
+            LoadedOrder = ApplicationTestData.Persisted(order, version),
             EnforceVersionChecks = true
         };
 

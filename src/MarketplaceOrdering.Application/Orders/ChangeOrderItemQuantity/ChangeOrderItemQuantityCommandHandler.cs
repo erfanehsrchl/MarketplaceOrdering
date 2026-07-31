@@ -37,14 +37,14 @@ public sealed class ChangeOrderItemQuantityCommandHandler
         if (quantity.IsFailure) return Result<OrderDetails>.Failure(quantity.Error);
         var loaded = await _repository.LoadAsync(orderId.Value, cancellationToken);
         if (loaded.IsFailure) return Result<OrderDetails>.Failure(loaded.Error);
-        var changed = loaded.Value.Order.ChangeItemQuantity(
+        var order = loaded.Value;
+        var changed = order.ChangeItemQuantity(
             productId.Value, quantity.Value, _clock.UtcNow);
         if (changed.IsFailure) return Result<OrderDetails>.Failure(changed.Error);
-        var saved = await _repository.SaveAsync(
-            loaded.Value.Order, loaded.Value.Version, cancellationToken);
+        var saved = await _repository.SaveAsync(order, cancellationToken);
         return saved.IsFailure
             ? Result<OrderDetails>.Failure(saved.Error)
             : Result<OrderDetails>.Success(
-                OrderDetailsMapper.Map(loaded.Value.Order, saved.Value));
+                OrderDetailsMapper.Map(order));
     }
 }

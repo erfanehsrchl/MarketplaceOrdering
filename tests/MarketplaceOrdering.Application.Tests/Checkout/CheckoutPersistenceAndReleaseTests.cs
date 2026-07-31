@@ -1,6 +1,7 @@
 using FluentAssertions;
 using MarketplaceOrdering.Application.Common.Abstractions.Inventory;
 using MarketplaceOrdering.Application.Common.Errors;
+using MarketplaceOrdering.Application.Tests.Fakes;
 using MarketplaceOrdering.Domain.Checkout;
 using MarketplaceOrdering.Domain.Discounts;
 using MarketplaceOrdering.Domain.Fulfillment;
@@ -81,16 +82,17 @@ public sealed class CheckoutPersistenceAndReleaseTests
     {
         var context = CheckoutHandlerTestData.Create(2);
         var attemptId = PrepareCompensatingOrder(context);
+        ApplicationTestData.Persisted(context.Order, 20);
 
         var result = await context.Coordinator.ReleaseForFailedCheckoutAsync(
-            context.Order, 20, attemptId, CancellationToken.None);
+            context.Order, attemptId, CancellationToken.None);
 
         result.Value.Should().Be(22);
         context.Inventory.ReleaseRequests.Select(request => request.VendorId)
             .Should().Equal(
                 CheckoutHandlerTestData.Vendor(2),
                 CheckoutHandlerTestData.Vendor(1));
-        context.Repository.CapturedExpectedVersions.Should().Equal(20, 21);
+        context.Repository.CapturedOrderVersions.Should().Equal(20, 21);
         context.Order.CheckoutAttempt!.Reservations.Should().OnlyContain(
             reservation => reservation.Status ==
                 InventoryReservationStatus.Released);
@@ -105,6 +107,7 @@ public sealed class CheckoutPersistenceAndReleaseTests
     {
         var context = CheckoutHandlerTestData.Create();
         var attemptId = PrepareCompensatingOrder(context);
+        ApplicationTestData.Persisted(context.Order, 8);
         var vendor = CheckoutHandlerTestData.Vendor(1);
         context.Inventory.ReleaseResults[vendor] = outcome switch
         {
@@ -117,14 +120,14 @@ public sealed class CheckoutPersistenceAndReleaseTests
         };
 
         var result = await context.Coordinator.ReleaseForFailedCheckoutAsync(
-            context.Order, 8, attemptId, CancellationToken.None);
+            context.Order, attemptId, CancellationToken.None);
 
         result.Value.Should().Be(9);
         var reservation = context.Order.CheckoutAttempt!.Reservations.Single();
         reservation.Status.Should().Be(
             InventoryReservationStatus.ReleasePending);
         reservation.ReleaseAttemptCount.Should().Be(1);
-        context.Repository.CapturedExpectedVersion.Should().Be(8);
+        context.Repository.CapturedOrderVersion.Should().Be(8);
     }
 
     private static void ConfigureReservationSuccessSaveFailure(

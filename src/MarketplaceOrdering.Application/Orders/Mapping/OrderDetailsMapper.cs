@@ -6,7 +6,7 @@ namespace MarketplaceOrdering.Application.Orders.Mapping;
 
 public static class OrderDetailsMapper
 {
-    public static OrderDetails Map(Order order, long version)
+    public static OrderDetails Map(Order order)
     {
         ArgumentNullException.ThrowIfNull(order);
         var selectedDiscount = order.SelectedDiscount is { } selected
@@ -31,7 +31,7 @@ public static class OrderDetailsMapper
             order.DeliveryAddress.Value,
             order.Status.ToString(),
             order.CreatedAt,
-            version,
+            order.Version,
             order.Items.Select(item => new OrderItemDetails(
                 item.ProductId.Value,
                 item.ProductName.Value,

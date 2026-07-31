@@ -1,4 +1,3 @@
-using MarketplaceOrdering.Application.Common.Models;
 using MarketplaceOrdering.Domain.Orders;
 using MarketplaceOrdering.Domain.ValueObjects;
 
@@ -27,6 +26,10 @@ internal static class ApplicationTestData
             $"{number:D8}-0000-0000-0000-000000000000")).Value,
         ProductName.Create($"Product {number}").Value);
 
-    internal static VersionedOrder Versioned(Order order, long version = 4) =>
-        new(order, version);
+    internal static Order Persisted(Order order, long version = 4)
+    {
+        order.UpdatePersistenceVersion(version);
+        order.ClearCommittedDomainEvents();
+        return order;
+    }
 }

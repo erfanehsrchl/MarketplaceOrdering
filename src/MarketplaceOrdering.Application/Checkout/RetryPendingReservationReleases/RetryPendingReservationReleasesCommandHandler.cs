@@ -42,7 +42,7 @@ public sealed class RetryPendingReservationReleasesCommandHandler
         if (loaded.IsFailure)
             return Result<RetryPendingReservationReleasesResult>.Failure(
                 loaded.Error);
-        var order = loaded.Value.Order;
+        var order = loaded.Value;
         var attempt = order.CheckoutAttempt;
         if (attempt is null)
             return Result<RetryPendingReservationReleasesResult>.Failure(
@@ -50,7 +50,7 @@ public sealed class RetryPendingReservationReleasesCommandHandler
         var pendingCount = attempt.Reservations.Count(reservation =>
             reservation.Status == InventoryReservationStatus.ReleasePending);
         if (pendingCount == 0)
-            return Success(order, loaded.Value.Version, 0);
+            return Success(order, 0);
 
         Result<long> released;
         if (order.Status is OrderStatus.Cancelled or OrderStatus.Expired)
@@ -58,7 +58,6 @@ public sealed class RetryPendingReservationReleasesCommandHandler
             released = await _releaseCoordinator
                 .ReleaseForTerminalOrderAsync(
                     order,
-                    loaded.Value.Version,
                     attempt.Id,
                     cancellationToken);
         }
@@ -69,7 +68,6 @@ public sealed class RetryPendingReservationReleasesCommandHandler
             released = await _releaseCoordinator
                 .ReleaseForFailedCheckoutAsync(
                     order,
-                    loaded.Value.Version,
                     attempt.Id,
                     cancellationToken);
         }
@@ -82,7 +80,6 @@ public sealed class RetryPendingReservationReleasesCommandHandler
         if (released.IsFailure)
             return Result<RetryPendingReservationReleasesResult>.Failure(
                 released.Error);
-        var version = released.Value;
         pendingCount = attempt.Reservations.Count(reservation =>
             reservation.Status == InventoryReservationStatus.ReleasePending);
         if (order.Status == OrderStatus.Draft
@@ -94,23 +91,21 @@ public sealed class RetryPendingReservationReleasesCommandHandler
                 return Result<RetryPendingReservationReleasesResult>.Failure(
                     completed.Error);
             var saved = await _orderRepository.SaveAsync(
-                order, version, cancellationToken);
+                order, cancellationToken);
             if (saved.IsFailure)
                 return Result<RetryPendingReservationReleasesResult>.Failure(
                     saved.Error);
-            version = saved.Value;
         }
-        return Success(order, version, pendingCount);
+        return Success(order, pendingCount);
     }
 
     private static Result<RetryPendingReservationReleasesResult> Success(
         Order order,
-        long version,
         int remaining) =>
         Result<RetryPendingReservationReleasesResult>.Success(
             new RetryPendingReservationReleasesResult(
                 order.Id.Value,
                 order.Status.ToString(),
                 remaining,
-                version));
+                order.Version));
 }

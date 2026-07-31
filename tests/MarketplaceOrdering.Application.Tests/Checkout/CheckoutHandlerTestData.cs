@@ -53,7 +53,7 @@ internal static class CheckoutHandlerTestData
         var journal = new List<string>();
         var repository = new FakeOrderRepository
         {
-            LoadedOrder = ApplicationTestData.Versioned(order, 4),
+            LoadedOrder = ApplicationTestData.Persisted(order, 4),
             Journal = journal
         };
         var offers = new FakeProductOfferProvider { Journal = journal };

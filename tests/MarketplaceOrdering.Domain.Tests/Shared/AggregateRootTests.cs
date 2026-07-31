@@ -43,16 +43,10 @@ public sealed class AggregateRootTests
     }
 
     [Fact]
-    public void VersionUpdate_ShouldAcceptNonNegativeVersionAndRejectNegativeVersion()
+    public void PersistenceVersion_ShouldNotBelongToEveryAggregateRoot()
     {
-        var aggregate = new TestAggregate(Guid.NewGuid());
-        aggregate.UpdateVersion(7);
-
-        aggregate.Version.Should().Be(7);
-        var update = () => aggregate.UpdateVersion(-1);
-        update.Should().Throw<ArgumentOutOfRangeException>();
-        typeof(AggregateRoot<Guid>).GetProperty(nameof(AggregateRoot<Guid>.Version))!
-            .SetMethod!.IsPublic.Should().BeFalse();
+        typeof(AggregateRoot<Guid>).GetProperty("Version")
+            .Should().BeNull();
     }
 
     [Fact]

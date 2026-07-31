@@ -73,7 +73,7 @@ public sealed class CheckoutOrderBoundaryTests
 
         result.Error.Should().Be(ApplicationErrors.OrderVersionConflict);
         context.Inventory.ReservationRequests.Should().BeEmpty();
-        context.Repository.CapturedExpectedVersions.Take(2)
+        context.Repository.CapturedOrderVersions.Take(2)
             .Should().Equal(4, 5);
     }
 

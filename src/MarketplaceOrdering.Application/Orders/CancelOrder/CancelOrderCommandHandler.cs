@@ -46,24 +46,22 @@ public sealed class CancelOrderCommandHandler
             orderId.Value, cancellationToken);
         if (loaded.IsFailure)
             return Result<CancelOrderResult>.Failure(loaded.Error);
-        var order = loaded.Value.Order;
+        var order = loaded.Value;
         var cancelled = order.Cancel(reason.Value, _clock.UtcNow);
         if (cancelled.IsFailure)
             return Result<CancelOrderResult>.Failure(cancelled.Error);
         var saved = await _orderRepository.SaveAsync(
-            order, loaded.Value.Version, cancellationToken);
+            order, cancellationToken);
         if (saved.IsFailure)
             return Result<CancelOrderResult>.Failure(saved.Error);
-        var version = saved.Value;
         var attempt = order.CheckoutAttempt;
         if (attempt is not null && attempt.Reservations.Any(IsReleasable))
         {
             var released = await _releaseCoordinator
                 .ReleaseForTerminalOrderAsync(
-                    order, version, attempt.Id, cancellationToken);
+                    order, attempt.Id, cancellationToken);
             if (released.IsFailure)
                 return Result<CancelOrderResult>.Failure(released.Error);
-            version = released.Value;
         }
         return Result<CancelOrderResult>.Success(
             new CancelOrderResult(
@@ -74,7 +72,7 @@ public sealed class CancelOrderCommandHandler
                 attempt?.Reservations.Any(reservation =>
                     reservation.Status ==
                         InventoryReservationStatus.ReleasePending) == true,
-                version));
+                order.Version));
     }
 
     private static bool IsReleasable(InventoryReservation reservation) =>

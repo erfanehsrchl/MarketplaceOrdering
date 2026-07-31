@@ -35,14 +35,14 @@ public sealed class ApplyDiscountCodeCommandHandler
         if (code.IsFailure) return Result<OrderDetails>.Failure(code.Error);
         var loaded = await _repository.LoadAsync(orderId.Value, cancellationToken);
         if (loaded.IsFailure) return Result<OrderDetails>.Failure(loaded.Error);
-        var changed = loaded.Value.Order.SelectDiscountCode(
+        var order = loaded.Value;
+        var changed = order.SelectDiscountCode(
             code.Value, _clock.UtcNow);
         if (changed.IsFailure) return Result<OrderDetails>.Failure(changed.Error);
-        var saved = await _repository.SaveAsync(
-            loaded.Value.Order, loaded.Value.Version, cancellationToken);
+        var saved = await _repository.SaveAsync(order, cancellationToken);
         return saved.IsFailure
             ? Result<OrderDetails>.Failure(saved.Error)
             : Result<OrderDetails>.Success(
-                OrderDetailsMapper.Map(loaded.Value.Order, saved.Value));
+                OrderDetailsMapper.Map(order));
     }
 }

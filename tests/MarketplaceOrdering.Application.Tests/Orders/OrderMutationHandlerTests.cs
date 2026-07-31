@@ -18,7 +18,7 @@ public sealed class OrderMutationHandlerTests
         var order = ApplicationTestData.CreateOrder();
         var repository = new FakeOrderRepository
         {
-            LoadedOrder = ApplicationTestData.Versioned(order, 7)
+            LoadedOrder = ApplicationTestData.Persisted(order, 7)
         };
         var clock = new FakeClock();
         var occurredAt = clock.UtcNow;
@@ -36,10 +36,10 @@ public sealed class OrderMutationHandlerTests
         result.Value.Items.Should().HaveCount(2);
         repository.LoadCalls.Should().Be(1);
         repository.SaveCalls.Should().Be(1);
-        repository.CapturedExpectedVersion.Should().Be(7);
+        repository.CapturedOrderVersion.Should().Be(7);
         repository.LoadCancellationToken.Should().Be(cancellation.Token);
         repository.SaveCancellationToken.Should().Be(cancellation.Token);
-        order.DomainEvents.OfType<OrderItemAddedDomainEvent>().Last()
+        repository.SavedDomainEvents.OfType<OrderItemAddedDomainEvent>().Last()
             .OccurredAt.Should().Be(occurredAt);
     }
 
@@ -100,7 +100,7 @@ public sealed class OrderMutationHandlerTests
 
         result.Value.Version.Should().Be(6);
         result.Value.Items.Single().Quantity.Should().Be(4);
-        repository.CapturedExpectedVersion.Should().Be(5);
+        repository.CapturedOrderVersion.Should().Be(5);
     }
 
     [Fact]
@@ -164,7 +164,7 @@ public sealed class OrderMutationHandlerTests
                 CancellationToken.None);
 
         applied.Value.SelectedDiscount!.Code.Should().Be("SAVE");
-        repository.LoadedOrder = ApplicationTestData.Versioned(order, 5);
+        repository.LoadedOrder = ApplicationTestData.Persisted(order, 5);
         var removed = await new RemoveDiscountCodeCommandHandler(repository, clock)
             .Handle(
                 new RemoveDiscountCodeCommand(order.Id.Value),
@@ -209,7 +209,6 @@ public sealed class OrderMutationHandlerTests
     public async Task SaveFailure_ShouldRemainFailureAndEventsPending()
     {
         var order = ApplicationTestData.CreateOrder();
-        var existingEventCount = order.DomainEvents.Count;
         var repository = RepositoryFor(order);
         repository.SaveFailure = ApplicationErrors.OrderVersionConflict;
 
@@ -222,13 +221,14 @@ public sealed class OrderMutationHandlerTests
         result.Error.Should().Be(ApplicationErrors.OrderVersionConflict);
         repository.LoadCalls.Should().Be(1);
         repository.SaveCalls.Should().Be(1);
-        order.DomainEvents.Should().HaveCount(existingEventCount + 1);
+        order.DomainEvents.Should().ContainSingle();
+        order.Version.Should().Be(4);
     }
 
     private static FakeOrderRepository RepositoryFor(
         MarketplaceOrdering.Domain.Orders.Order order,
         long version = 4) => new()
     {
-        LoadedOrder = ApplicationTestData.Versioned(order, version)
+        LoadedOrder = ApplicationTestData.Persisted(order, version)
     };
 }

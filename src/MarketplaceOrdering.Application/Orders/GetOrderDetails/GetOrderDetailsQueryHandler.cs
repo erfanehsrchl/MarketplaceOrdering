@@ -31,6 +31,6 @@ public sealed class GetOrderDetailsQueryHandler
         return loaded.IsFailure
             ? Result<OrderDetails>.Failure(loaded.Error)
             : Result<OrderDetails>.Success(
-                OrderDetailsMapper.Map(loaded.Value.Order, loaded.Value.Version));
+                OrderDetailsMapper.Map(loaded.Value));
     }
 }

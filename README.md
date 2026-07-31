@@ -206,8 +206,8 @@ sequenceDiagram
     Sender->>Handler: Handle
     Handler->>Idempotency: TryBegin
     Idempotency-->>Handler: Started
-    Handler->>Repository: Load Order and Version
-    Repository-->>Handler: Isolated Order and Version
+    Handler->>Repository: Load Order
+    Repository-->>Handler: Isolated Order containing Version
     Handler->>Order: StartCheckout
     Handler->>Repository: Save Processing
     Handler->>Offers: Get Offers
@@ -328,7 +328,7 @@ flowchart TD
     end
 ```
 
-Cancelled and Expired are persisted before Inventory Release. A failed Release does not reverse either final state; it remains ReleasePending for retry. Payment and expiration races are resolved by optimistic concurrency, so only one Save using the same expected Version succeeds.
+Cancelled and Expired are persisted before Inventory Release. A failed Release does not reverse either final state; it remains ReleasePending for retry. Payment and expiration races are resolved by optimistic concurrency, so only one Save using the same loaded `Order.Version` succeeds.
 
 ### Fulfillment Planning Flow
 
@@ -402,7 +402,7 @@ flowchart LR
     RECOVERY --> RECOVERYPORT
     CLOCK --> CLOCKPORT
 
-    SNAPSHOT["Immutable Order snapshots; isolated Load; atomic expected-Version Save; atomic SavePayment uniqueness"]
+    SNAPSHOT["Immutable Order snapshots with Version; isolated Load; atomic conditional Save; atomic SavePayment uniqueness"]
     INVENTORYRULES["Reserve replay by ReservationOperationKey; Release replay by ReservationId"]
     IDEMRULES["Atomic IdempotencyKey claim and terminal replay"]
     RECOVERYRULES["Recovery keyed by ReservationOperationKey"]
@@ -550,7 +550,7 @@ Complete idempotency
 
 Payment is allowed only from AwaitingPayment. Amount must exactly match FulfillmentPlan TotalPayable, all required Reservations must remain Active, and PaidAt must be strictly before every Reservation expiration. Replaying the same TransactionId and amount is idempotent and preserves the original PaidAt.
 
-`SavePaymentAsync` atomically combines expected-Version validation, global TransactionId ownership, snapshot persistence, and version increment. Payment and expiration racing from one loaded Version cannot both persist.
+`SavePaymentAsync` atomically combines `Order.Version` validation, global TransactionId ownership, snapshot persistence, and version increment. Payment and expiration racing from one loaded Version cannot both persist.
 
 ## Cancellation and expiration
 
@@ -558,9 +558,11 @@ Draft, Processing, and AwaitingPayment Orders may be cancelled. Cancellation and
 
 ## Persistence and concurrency
 
-Infrastructure is intentionally in-memory. `InMemoryOrderRepository` stores explicit immutable snapshots, never caller Aggregate references. Every Load rehydrates an isolated Aggregate with no pending Domain Events. Version is repository metadata and is not part of the persisted Domain snapshot.
+Infrastructure is intentionally in-memory. `InMemoryOrderRepository` stores explicit immutable snapshots, never caller Aggregate references. `OrderPersistenceSnapshot` represents the complete database row, including the persistence concurrency token in `Version`. Every Load rehydrates an isolated Aggregate, restores that exact Version, and creates no pending Domain Events.
 
-Save performs compare-and-replace under one lock and increments Version exactly once. Payment save validates Version and TransactionId ownership under the same lock. Domain Events are committed only after successful snapshot storage; every failure leaves pending Events intact. State is process-local and is lost on restart.
+A newly created Order starts at Version `0`; its first successful persistence changes it to `1`, and every successful Save increments it exactly once. Save compares the persisted snapshot Version with `Order.Version` before replacing the snapshot, preventing lost updates. Payment save validates Version and TransactionId ownership under the same lock. Domain Events are committed only after successful snapshot storage; every failure leaves Version and pending Events intact.
+
+Version is technical persistence state: business logic never reads or changes it, API inputs never accept it, and only Infrastructure restores or advances it after successful persistence. A future EF Core adapter would map `Order.Version` as a concurrency token; this solution deliberately keeps the current in-memory adapter and adds no persistence attributes to Domain. State is process-local and is lost on restart.
 
 ## Domain Events
 

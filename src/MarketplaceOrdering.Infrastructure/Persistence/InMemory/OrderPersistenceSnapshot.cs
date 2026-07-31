@@ -8,6 +8,7 @@ namespace MarketplaceOrdering.Infrastructure.Persistence.InMemory;
 
 internal sealed record OrderPersistenceSnapshot(
     OrderId OrderId,
+    long Version,
     CustomerId CustomerId,
     DeliveryAddress DeliveryAddress,
     OrderStatus Status,

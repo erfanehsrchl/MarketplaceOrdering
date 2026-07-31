@@ -9,7 +9,6 @@ using MarketplaceOrdering.Application.Common.Abstractions.Offers;
 using MarketplaceOrdering.Application.Common.Abstractions.Persistence;
 using MarketplaceOrdering.Application.Common.Abstractions.Recovery;
 using MarketplaceOrdering.Application.Common.Abstractions.Time;
-using MarketplaceOrdering.Application.Common.Models;
 using MarketplaceOrdering.Application.Orders.AddOrderItem;
 using MarketplaceOrdering.Application.Orders.ApplyDiscountCode;
 using MarketplaceOrdering.Application.Orders.ChangeOrderItemQuantity;
@@ -19,6 +18,7 @@ using MarketplaceOrdering.Application.Orders.Models;
 using MarketplaceOrdering.Application.Orders.RemoveDiscountCode;
 using MarketplaceOrdering.Application.Orders.RemoveOrderItem;
 using MarketplaceOrdering.Application.Tests.Fakes;
+using MarketplaceOrdering.Domain.Orders;
 using MarketplaceOrdering.Domain.Shared;
 using MarketplaceOrdering.Domain.ValueObjects;
 using MarketplaceOrdering.Infrastructure.Persistence.InMemory;
@@ -110,12 +110,24 @@ public sealed class ApplicationContractTests
     }
 
     [Fact]
-    public void VersionedOrder_ShouldRequirePersistedVersion()
+    public void NewOrder_ShouldStartWithVersionZeroAndHideVersionSetter()
     {
-        var action = () => new VersionedOrder(
-            ApplicationTestData.CreateOrder(), 0);
+        var order = ApplicationTestData.CreateOrder();
 
-        action.Should().Throw<ArgumentOutOfRangeException>();
+        order.Version.Should().Be(0);
+        typeof(Order).GetProperty(nameof(Order.Version))!.SetMethod!
+            .IsPublic.Should().BeFalse();
+    }
+
+    [Fact]
+    public void PersistenceVersion_ShouldRejectNegativeValues()
+    {
+        var order = ApplicationTestData.CreateOrder();
+
+        var update = () => order.UpdatePersistenceVersion(-1);
+
+        update.Should().Throw<ArgumentOutOfRangeException>();
+        order.Version.Should().Be(0);
     }
 
     [Fact]
@@ -175,6 +187,8 @@ public sealed class ApplicationContractTests
         typeof(InMemoryOrderRepository).Assembly.GetTypes()
             .Should().NotContain(type => type.Name.EndsWith(
                 "Handler", StringComparison.Ordinal));
+        typeof(InMemoryOrderRepository).Assembly.GetTypes()
+            .Should().NotContain(type => type.Name == "StoredOrder");
         new[]
             {
                 applicationAssembly,

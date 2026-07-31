@@ -37,6 +37,8 @@ public sealed class Order : AggregateRoot<OrderId>
 
     public DateTimeOffset CreatedAt { get; }
 
+    public long Version { get; private set; }
+
     public IReadOnlyCollection<OrderItem> Items => _items.ToArray();
 
     public SelectedDiscountCode? SelectedDiscount { get; private set; }
@@ -45,6 +47,18 @@ public sealed class Order : AggregateRoot<OrderId>
     public PaymentRecord? Payment => _payment;
     public CancellationRecord? Cancellation => _cancellation;
     public DateTimeOffset? ExpiredAt { get; private set; }
+
+    internal void UpdatePersistenceVersion(long version)
+    {
+        if (version < 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(version),
+                "Version cannot be negative.");
+        }
+
+        Version = version;
+    }
 
     internal static Order Rehydrate(
         OrderId orderId,

@@ -72,6 +72,6 @@ public sealed class CreateOrderCommandHandler
         return added.IsFailure
             ? Result<OrderDetails>.Failure(added.Error)
             : Result<OrderDetails>.Success(
-                OrderDetailsMapper.Map(order.Value, added.Value));
+                OrderDetailsMapper.Map(order.Value));
     }
 }

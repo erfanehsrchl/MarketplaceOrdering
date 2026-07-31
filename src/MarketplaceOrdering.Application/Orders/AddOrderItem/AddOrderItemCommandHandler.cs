@@ -41,16 +41,16 @@ public sealed class AddOrderItemCommandHandler
 
         var loaded = await _repository.LoadAsync(orderId.Value, cancellationToken);
         if (loaded.IsFailure) return Result<OrderDetails>.Failure(loaded.Error);
-        var changed = loaded.Value.Order.AddItem(
+        var order = loaded.Value;
+        var changed = order.AddItem(
             new ProductReference(productId.Value, productName.Value),
             quantity.Value,
             _clock.UtcNow);
         if (changed.IsFailure) return Result<OrderDetails>.Failure(changed.Error);
-        var saved = await _repository.SaveAsync(
-            loaded.Value.Order, loaded.Value.Version, cancellationToken);
+        var saved = await _repository.SaveAsync(order, cancellationToken);
         return saved.IsFailure
             ? Result<OrderDetails>.Failure(saved.Error)
             : Result<OrderDetails>.Success(
-                OrderDetailsMapper.Map(loaded.Value.Order, saved.Value));
+                OrderDetailsMapper.Map(order));
     }
 }

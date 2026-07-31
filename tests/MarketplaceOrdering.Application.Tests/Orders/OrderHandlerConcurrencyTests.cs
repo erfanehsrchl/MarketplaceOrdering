@@ -82,8 +82,8 @@ public sealed class OrderHandlerConcurrencyTests
         int itemCount = 1)
     {
         var order = ApplicationTestData.CreateOrder(itemCount);
-        var pendingBefore = order.DomainEvents.Count;
         var repository = RepositoryFor(order);
+        var pendingBefore = order.DomainEvents.Count;
         repository.SaveFailure = ApplicationErrors.OrderVersionConflict;
 
         var result = await execute(order, repository, new FakeClock());
@@ -91,12 +91,13 @@ public sealed class OrderHandlerConcurrencyTests
         result.Error.Should().Be(ApplicationErrors.OrderVersionConflict);
         repository.LoadCalls.Should().Be(1);
         repository.SaveCalls.Should().Be(1);
-        repository.CapturedExpectedVersion.Should().Be(12);
+        repository.CapturedOrderVersion.Should().Be(12);
         order.DomainEvents.Count.Should().BeGreaterThanOrEqualTo(pendingBefore);
+        order.Version.Should().Be(12);
     }
 
     private static FakeOrderRepository RepositoryFor(Order order) => new()
     {
-        LoadedOrder = ApplicationTestData.Versioned(order, 12)
+        LoadedOrder = ApplicationTestData.Persisted(order, 12)
     };
 }

@@ -1,6 +1,5 @@
 using MarketplaceOrdering.Application.Common.Abstractions.Time;
 using MarketplaceOrdering.Application.Common.Abstractions.Persistence;
-using MarketplaceOrdering.Application.Common.Models;
 using MarketplaceOrdering.Domain.Orders;
 using MarketplaceOrdering.Domain.Shared;
 using MarketplaceOrdering.Domain.ValueObjects;
@@ -60,7 +59,7 @@ internal sealed class UnexpectedFailureApiFactory
 
     private sealed class ThrowingOrderRepository : IOrderRepository
     {
-        public Task<Result<VersionedOrder>> LoadAsync(
+        public Task<Result<Order>> LoadAsync(
             OrderId orderId,
             CancellationToken cancellationToken) =>
             throw new InvalidOperationException("sensitive internal detail");
@@ -72,13 +71,11 @@ internal sealed class UnexpectedFailureApiFactory
 
         public Task<Result<long>> SaveAsync(
             Order order,
-            long expectedVersion,
             CancellationToken cancellationToken) =>
             throw new InvalidOperationException("sensitive internal detail");
 
         public Task<Result<long>> SavePaymentAsync(
             Order order,
-            long expectedVersion,
             TransactionId transactionId,
             CancellationToken cancellationToken) =>
             throw new InvalidOperationException("sensitive internal detail");
@@ -154,7 +151,7 @@ internal sealed class CancellationProbeOrderRepository : IOrderRepository
     internal Task Entered => _entered.Task;
     internal CancellationToken CapturedCancellationToken { get; private set; }
 
-    public async Task<Result<VersionedOrder>> LoadAsync(
+    public async Task<Result<Order>> LoadAsync(
         OrderId orderId,
         CancellationToken cancellationToken)
     {
@@ -171,13 +168,11 @@ internal sealed class CancellationProbeOrderRepository : IOrderRepository
 
     public Task<Result<long>> SaveAsync(
         Order order,
-        long expectedVersion,
         CancellationToken cancellationToken) =>
         throw new InvalidOperationException("Not used by this test.");
 
     public Task<Result<long>> SavePaymentAsync(
         Order order,
-        long expectedVersion,
         TransactionId transactionId,
         CancellationToken cancellationToken) =>
         throw new InvalidOperationException("Not used by this test.");
@@ -185,7 +180,7 @@ internal sealed class CancellationProbeOrderRepository : IOrderRepository
 
 internal sealed class ImmediateCancellationOrderRepository : IOrderRepository
 {
-    public Task<Result<VersionedOrder>> LoadAsync(
+    public Task<Result<Order>> LoadAsync(
         OrderId orderId,
         CancellationToken cancellationToken) =>
         throw new OperationCanceledException(cancellationToken);
@@ -197,13 +192,11 @@ internal sealed class ImmediateCancellationOrderRepository : IOrderRepository
 
     public Task<Result<long>> SaveAsync(
         Order order,
-        long expectedVersion,
         CancellationToken cancellationToken) =>
         throw new InvalidOperationException("Not used by this test.");
 
     public Task<Result<long>> SavePaymentAsync(
         Order order,
-        long expectedVersion,
         TransactionId transactionId,
         CancellationToken cancellationToken) =>
         throw new InvalidOperationException("Not used by this test.");

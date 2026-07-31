@@ -1,7 +1,6 @@
 using FluentAssertions;
 using MarketplaceOrdering.Application.Checkout.RetryPendingReservationReleases;
 using MarketplaceOrdering.Application.Common.Abstractions.Inventory;
-using MarketplaceOrdering.Application.Common.Models;
 using MarketplaceOrdering.Application.Orders.CancelOrder;
 using MarketplaceOrdering.Application.Orders.ExpireOrder;
 using MarketplaceOrdering.Application.Tests.Checkout;
@@ -144,8 +143,7 @@ public sealed class FinalStateHandlerTests
             context.Coordinator).Handle(
                 new CancelOrderCommand(context.Order.Id.Value, "Cancel"),
                 CancellationToken.None);
-        context.Repository.LoadedOrder = new VersionedOrder(
-            context.Order, cancelled.Value.Version);
+        context.Repository.LoadedOrder = context.Order;
         context.Inventory.ReleaseResults[vendor] =
             Result<InventoryReleaseOutcome>.Success(
                 new InventoryReleaseSucceeded());
@@ -168,8 +166,7 @@ public sealed class FinalStateHandlerTests
         var checkout = await context.Handler.Handle(
             CheckoutHandlerTestData.Command(context.Order),
             CancellationToken.None);
-        context.Repository.LoadedOrder = new VersionedOrder(
-            context.Order, checkout.Value.Version);
+        context.Repository.LoadedOrder = context.Order;
         return context;
     }
 }

@@ -135,19 +135,16 @@ public sealed class CheckoutOrderCommandHandler
             return await FinalizeIdempotencyFailureAsync(
                 idempotencyKey, loaded.Error, cancellationToken);
 
-        var order = loaded.Value.Order;
-        var version = loaded.Value.Version;
+        var order = loaded.Value;
         var started = order.StartCheckout(attemptId, startedAt);
         if (started.IsFailure)
             return await FinalizeIdempotencyFailureAsync(
                 idempotencyKey, started.Error, cancellationToken);
         var processingSave = await _orderRepository.SaveAsync(
-            order, version, cancellationToken);
+            order, cancellationToken);
         if (processingSave.IsFailure)
             return await FinalizeIdempotencyFailureAsync(
                 idempotencyKey, processingSave.Error, cancellationToken);
-        version = processingSave.Value;
-
         cancellationToken.ThrowIfCancellationRequested();
         var demands = order.GetDemandSnapshot();
         var offers = await _productOfferProvider.GetOffersAsync(
@@ -155,7 +152,7 @@ public sealed class CheckoutOrderCommandHandler
         cancellationToken.ThrowIfCancellationRequested();
         if (offers.IsFailure)
             return await FailBeforeReservationsAndFinalizeAsync(
-                idempotencyKey, order, version, attemptId,
+                idempotencyKey, order, attemptId,
                 offers.Error, cancellationToken);
 
         DiscountPolicy? discountPolicy = null;
@@ -167,7 +164,7 @@ public sealed class CheckoutOrderCommandHandler
             cancellationToken.ThrowIfCancellationRequested();
             if (policy.IsFailure)
                 return await FailBeforeReservationsAndFinalizeAsync(
-                    idempotencyKey, order, version, attemptId,
+                    idempotencyKey, order, attemptId,
                     policy.Error, cancellationToken);
             discountPolicy = policy.Value;
         }
@@ -176,17 +173,17 @@ public sealed class CheckoutOrderCommandHandler
             demands, offers.Value, discountPolicy, _clock.UtcNow);
         if (plan.IsFailure)
             return await FailBeforeReservationsAndFinalizeAsync(
-                idempotencyKey, order, version, attemptId,
+                idempotencyKey, order, attemptId,
                 plan.Error, cancellationToken);
 
         var attached = order.AttachFulfillmentPlan(
             attemptId, plan.Value, _clock.UtcNow);
         if (attached.IsFailure)
             return await FailBeforeReservationsAndFinalizeAsync(
-                idempotencyKey, order, version, attemptId,
+                idempotencyKey, order, attemptId,
                 attached.Error, cancellationToken);
         var planSave = await _orderRepository.SaveAsync(
-            order, version, cancellationToken);
+            order, cancellationToken);
         if (planSave.IsFailure)
         {
             await BestEffortFailBeforeReservationsAsync(
@@ -194,8 +191,6 @@ public sealed class CheckoutOrderCommandHandler
             return await FinalizeIdempotencyFailureAsync(
                 idempotencyKey, planSave.Error, cancellationToken);
         }
-        version = planSave.Value;
-
         foreach (var vendor in plan.Value.Vendors
                      .OrderBy(vendor => vendor.VendorId.Value))
         {
@@ -209,10 +204,10 @@ public sealed class CheckoutOrderCommandHandler
                 _clock.UtcNow);
             if (intent.IsFailure)
                 return await CompensateAndFinalizeAsync(
-                    idempotencyKey, order, version, attemptId,
+                    idempotencyKey, order, attemptId,
                     intent.Error, cancellationToken);
             var intentSave = await _orderRepository.SaveAsync(
-                order, version, cancellationToken);
+                order, cancellationToken);
             if (intentSave.IsFailure)
             {
                 await BestEffortCompensatePersistedStateAsync(
@@ -220,8 +215,6 @@ public sealed class CheckoutOrderCommandHandler
                 return await FinalizeIdempotencyFailureAsync(
                     idempotencyKey, intentSave.Error, cancellationToken);
             }
-            version = intentSave.Value;
-
             cancellationToken.ThrowIfCancellationRequested();
             var request = BuildReservationRequest(
                 order.Id, attemptId, vendor, operationKey);
@@ -266,13 +259,13 @@ public sealed class CheckoutOrderCommandHandler
                         _clock.UtcNow);
                     if (recorded.IsFailure)
                         return await CompensateAndFinalizeAsync(
-                            idempotencyKey, order, version, attemptId,
+                            idempotencyKey, order, attemptId,
                             recorded.Error, cancellationToken);
                     var rejectionError = Error.DependencyFailure(
                         order.CheckoutAttempt!.Failure!.Code,
                         "Inventory rejected the Reservation.");
                     var rejectedSave = await _orderRepository.SaveAsync(
-                        order, version, cancellationToken);
+                        order, cancellationToken);
                     if (rejectedSave.IsFailure)
                         return await FinalizeIdempotencyFailureAsync(
                             idempotencyKey,
@@ -281,7 +274,6 @@ public sealed class CheckoutOrderCommandHandler
                     return await ReleaseCompleteAndFinalizeAsync(
                         idempotencyKey,
                         order,
-                        rejectedSave.Value,
                         attemptId,
                         rejectionError,
                         cancellationToken);
@@ -299,7 +291,6 @@ public sealed class CheckoutOrderCommandHandler
                         return await CleanupUnpersistedReservationAsync(
                             idempotencyKey,
                             order,
-                            version,
                             attemptId,
                             vendor.VendorId,
                             operationKey,
@@ -309,13 +300,12 @@ public sealed class CheckoutOrderCommandHandler
                     }
 
                     var successSave = await _orderRepository.SaveAsync(
-                        order, version, cancellationToken);
+                        order, cancellationToken);
                     if (successSave.IsFailure)
                     {
                         return await CleanupUnpersistedReservationAsync(
                             idempotencyKey,
                             order,
-                            version,
                             attemptId,
                             vendor.VendorId,
                             operationKey,
@@ -323,7 +313,6 @@ public sealed class CheckoutOrderCommandHandler
                             successSave.Error,
                             cancellationToken);
                     }
-                    version = successSave.Value;
                     break;
                 }
 
@@ -339,10 +328,10 @@ public sealed class CheckoutOrderCommandHandler
         var completed = order.CompleteCheckout(attemptId, _clock.UtcNow);
         if (completed.IsFailure)
             return await CompensateAndFinalizeAsync(
-                idempotencyKey, order, version, attemptId,
+                idempotencyKey, order, attemptId,
                 completed.Error, cancellationToken);
         var completedSave = await _orderRepository.SaveAsync(
-            order, version, cancellationToken);
+            order, cancellationToken);
         if (completedSave.IsFailure)
         {
             await BestEffortCompensatePersistedStateAsync(
@@ -350,8 +339,6 @@ public sealed class CheckoutOrderCommandHandler
             return await FinalizeIdempotencyFailureAsync(
                 idempotencyKey, completedSave.Error, cancellationToken);
         }
-        version = completedSave.Value;
-
         var checkoutAttempt = order.CheckoutAttempt!;
         var result = new CheckoutOperationResult(
             order.Id,
@@ -359,7 +346,7 @@ public sealed class CheckoutOrderCommandHandler
             order.Status,
             checkoutAttempt.FulfillmentPlan!.TotalPayable,
             checkoutAttempt.PaymentExpiresAt!.Value,
-            version);
+            order.Version);
         cancellationToken.ThrowIfCancellationRequested();
         var idempotencyCompletion = await _idempotencyStore.CompleteAsync(
             idempotencyKey, result, _clock.UtcNow, cancellationToken);
@@ -370,7 +357,7 @@ public sealed class CheckoutOrderCommandHandler
                     Metadata(
                         ("orderId", order.Id),
                         ("checkoutAttemptId", attemptId),
-                        ("orderVersion", version),
+                        ("orderVersion", order.Version),
                         ("originalErrorCode",
                             idempotencyCompletion.Error.Code))));
     }
@@ -389,7 +376,7 @@ public sealed class CheckoutOrderCommandHandler
                         ("orderId", claim.OrderId),
                         ("checkoutAttemptId", claim.CheckoutAttemptId),
                         ("loadErrorCode", loaded.Error.Code))));
-        var order = loaded.Value.Order;
+        var order = loaded.Value;
         var attempt = order.CheckoutAttempt;
         if (order.Status == OrderStatus.AwaitingPayment
             && attempt?.Id == claim.CheckoutAttemptId
@@ -403,7 +390,7 @@ public sealed class CheckoutOrderCommandHandler
                 order.Status,
                 attempt.FulfillmentPlan.TotalPayable,
                 attempt.PaymentExpiresAt.Value,
-                loaded.Value.Version);
+                order.Version);
             var repaired = await _idempotencyStore.CompleteAsync(
                 idempotencyKey, result, _clock.UtcNow, cancellationToken);
             return repaired.IsSuccess
@@ -413,7 +400,7 @@ public sealed class CheckoutOrderCommandHandler
                         Metadata(
                             ("orderId", order.Id),
                             ("checkoutAttemptId", claim.CheckoutAttemptId),
-                            ("orderVersion", loaded.Value.Version),
+                            ("orderVersion", order.Version),
                             ("originalErrorCode", repaired.Error.Code))));
         }
 
@@ -448,13 +435,12 @@ public sealed class CheckoutOrderCommandHandler
         FailBeforeReservationsAndFinalizeAsync(
             IdempotencyKey idempotencyKey,
             Order order,
-            long version,
             CheckoutAttemptId attemptId,
             Error originalError,
             CancellationToken cancellationToken)
     {
         var failed = await FailBeforeReservationsAsync(
-            order, version, attemptId, originalError, cancellationToken);
+            order, attemptId, originalError, cancellationToken);
         if (failed.IsFailure)
             return await FinalizeIdempotencyFailureAsync(
                 idempotencyKey, failed.Error, cancellationToken);
@@ -464,7 +450,6 @@ public sealed class CheckoutOrderCommandHandler
 
     private async Task<Result<long>> FailBeforeReservationsAsync(
         Order order,
-        long version,
         CheckoutAttemptId attemptId,
         Error originalError,
         CancellationToken cancellationToken)
@@ -479,14 +464,13 @@ public sealed class CheckoutOrderCommandHandler
         if (failed.IsFailure)
             return Result<long>.Failure(failed.Error);
         return await _orderRepository.SaveAsync(
-            order, version, cancellationToken);
+            order, cancellationToken);
     }
 
     private async Task<Result<CheckoutOperationResult>>
         CompensateAndFinalizeAsync(
             IdempotencyKey idempotencyKey,
             Order order,
-            long version,
             CheckoutAttemptId attemptId,
             Error originalError,
             CancellationToken cancellationToken)
@@ -497,7 +481,7 @@ public sealed class CheckoutOrderCommandHandler
                 or InventoryReservationStatus.ReleasePending);
         if (!hasConfirmed)
             return await FailBeforeReservationsAndFinalizeAsync(
-                idempotencyKey, order, version, attemptId,
+                idempotencyKey, order, attemptId,
                 originalError, cancellationToken);
 
         var failure = CheckoutFailure.Create(originalError.Code, _clock.UtcNow);
@@ -509,14 +493,13 @@ public sealed class CheckoutOrderCommandHandler
             return await FinalizeIdempotencyFailureAsync(
                 idempotencyKey, begun.Error, cancellationToken);
         var compensatingSave = await _orderRepository.SaveAsync(
-            order, version, cancellationToken);
+            order, cancellationToken);
         if (compensatingSave.IsFailure)
             return await FinalizeIdempotencyFailureAsync(
                 idempotencyKey, compensatingSave.Error, cancellationToken);
         return await ReleaseCompleteAndFinalizeAsync(
             idempotencyKey,
             order,
-            compensatingSave.Value,
             attemptId,
             originalError,
             cancellationToken);
@@ -526,14 +509,13 @@ public sealed class CheckoutOrderCommandHandler
         ReleaseCompleteAndFinalizeAsync(
             IdempotencyKey idempotencyKey,
             Order order,
-            long version,
             CheckoutAttemptId attemptId,
             Error originalError,
             CancellationToken cancellationToken)
     {
         var released = await _releaseCoordinator
             .ReleaseForFailedCheckoutAsync(
-                order, version, attemptId, cancellationToken);
+                order, attemptId, cancellationToken);
         if (released.IsFailure)
             return await FinalizeIdempotencyFailureAsync(
                 idempotencyKey, released.Error, cancellationToken);
@@ -543,7 +525,7 @@ public sealed class CheckoutOrderCommandHandler
             return await FinalizeIdempotencyFailureAsync(
                 idempotencyKey, completed.Error, cancellationToken);
         var finalSave = await _orderRepository.SaveAsync(
-            order, released.Value, cancellationToken);
+            order, cancellationToken);
         if (finalSave.IsFailure)
             return await FinalizeIdempotencyFailureAsync(
                 idempotencyKey, finalSave.Error, cancellationToken);
@@ -555,7 +537,6 @@ public sealed class CheckoutOrderCommandHandler
         CleanupUnpersistedReservationAsync(
             IdempotencyKey idempotencyKey,
             Order order,
-            long version,
             CheckoutAttemptId attemptId,
             VendorId vendorId,
             ReservationOperationKey operationKey,
@@ -663,12 +644,11 @@ public sealed class CheckoutOrderCommandHandler
         var reloaded = await _orderRepository.LoadAsync(
             orderId, cancellationToken);
         if (reloaded.IsFailure
-            || reloaded.Value.Order.CheckoutAttempt?.Id != attemptId
-            || reloaded.Value.Order.Status != OrderStatus.Processing)
+            || reloaded.Value.CheckoutAttempt?.Id != attemptId
+            || reloaded.Value.Status != OrderStatus.Processing)
             return;
         await FailBeforeReservationsAsync(
-            reloaded.Value.Order,
-            reloaded.Value.Version,
+            reloaded.Value,
             attemptId,
             error,
             cancellationToken);
@@ -683,9 +663,9 @@ public sealed class CheckoutOrderCommandHandler
         var reloaded = await _orderRepository.LoadAsync(
             orderId, cancellationToken);
         if (reloaded.IsFailure
-            || reloaded.Value.Order.CheckoutAttempt?.Id != attemptId)
+            || reloaded.Value.CheckoutAttempt?.Id != attemptId)
             return;
-        var persistedOrder = reloaded.Value.Order;
+        var persistedOrder = reloaded.Value;
         var active = persistedOrder.CheckoutAttempt.Reservations.Any(
             reservation => reservation.Status is
                 InventoryReservationStatus.Active
@@ -693,7 +673,7 @@ public sealed class CheckoutOrderCommandHandler
         if (!active)
         {
             await FailBeforeReservationsAsync(
-                persistedOrder, reloaded.Value.Version, attemptId,
+                persistedOrder, attemptId,
                 error, cancellationToken);
             return;
         }
@@ -704,18 +684,18 @@ public sealed class CheckoutOrderCommandHandler
                 attemptId, failure.Value).IsFailure)
             return;
         var saved = await _orderRepository.SaveAsync(
-            persistedOrder, reloaded.Value.Version, cancellationToken);
+            persistedOrder, cancellationToken);
         if (saved.IsFailure)
             return;
         var released = await _releaseCoordinator.ReleaseForFailedCheckoutAsync(
-            persistedOrder, saved.Value, attemptId, cancellationToken);
+            persistedOrder, attemptId, cancellationToken);
         if (released.IsFailure)
             return;
         if (persistedOrder.CompleteCheckoutFailure(
                 attemptId, _clock.UtcNow).IsFailure)
             return;
         await _orderRepository.SaveAsync(
-            persistedOrder, released.Value, cancellationToken);
+            persistedOrder, cancellationToken);
     }
 
     private async Task<Result<CheckoutOperationResult>>

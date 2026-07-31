@@ -1,6 +1,5 @@
 using MarketplaceOrdering.Application.Common.Abstractions.Persistence;
 using MarketplaceOrdering.Application.Common.Errors;
-using MarketplaceOrdering.Application.Common.Models;
 using MarketplaceOrdering.Domain.Orders;
 using MarketplaceOrdering.Domain.Payments;
 using MarketplaceOrdering.Domain.Shared;
@@ -10,13 +9,22 @@ namespace MarketplaceOrdering.Application.Tests.Fakes;
 
 internal sealed class FakeOrderRepository : IOrderRepository
 {
-    internal VersionedOrder? LoadedOrder { get; set; }
+    private Order? _loadedOrder;
+    private long _persistedVersion;
+
+    internal Order? LoadedOrder
+    {
+        get => _loadedOrder;
+        set
+        {
+            _loadedOrder = value;
+            _persistedVersion = value?.Version ?? 0;
+        }
+    }
     internal Error? LoadFailure { get; set; }
     internal Error? AddFailure { get; set; }
     internal Error? SaveFailure { get; set; }
     internal Error? SavePaymentFailure { get; set; }
-    internal long AddVersion { get; set; } = 1;
-    internal long? SaveVersion { get; set; }
     internal bool EnforceVersionChecks { get; set; }
     internal Queue<Error?> SaveResults { get; } = new();
     internal IList<string>? Journal { get; set; }
@@ -24,9 +32,10 @@ internal sealed class FakeOrderRepository : IOrderRepository
     internal int AddCalls { get; private set; }
     internal int SaveCalls { get; private set; }
     internal int SavePaymentCalls { get; private set; }
-    internal long? CapturedExpectedVersion { get; private set; }
-    internal List<long> CapturedExpectedVersions { get; } = [];
+    internal long? CapturedOrderVersion { get; private set; }
+    internal List<long> CapturedOrderVersions { get; } = [];
     internal List<OrderStatus> SavedStatuses { get; } = [];
+    internal List<IDomainEvent> SavedDomainEvents { get; private set; } = [];
     internal Order? AddedOrder { get; private set; }
     internal Order? SavedOrder { get; private set; }
     internal TransactionId? CapturedTransactionId { get; private set; }
@@ -36,7 +45,7 @@ internal sealed class FakeOrderRepository : IOrderRepository
     internal CancellationToken AddCancellationToken { get; private set; }
     internal CancellationToken SaveCancellationToken { get; private set; }
 
-    public Task<Result<VersionedOrder>> LoadAsync(
+    public Task<Result<Order>> LoadAsync(
         OrderId orderId,
         CancellationToken cancellationToken)
     {
@@ -44,10 +53,10 @@ internal sealed class FakeOrderRepository : IOrderRepository
         Journal?.Add("Repository.Load");
         LoadCancellationToken = cancellationToken;
         var result = LoadFailure is not null
-            ? Result<VersionedOrder>.Failure(LoadFailure)
-            : LoadedOrder is not null && LoadedOrder.Order.Id == orderId
-                ? Result<VersionedOrder>.Success(LoadedOrder)
-                : Result<VersionedOrder>.Failure(ApplicationErrors.OrderNotFound);
+            ? Result<Order>.Failure(LoadFailure)
+            : LoadedOrder is not null && LoadedOrder.Id == orderId
+                ? Result<Order>.Success(LoadedOrder)
+                : Result<Order>.Failure(ApplicationErrors.OrderNotFound);
         return Task.FromResult(result);
     }
 
@@ -58,21 +67,24 @@ internal sealed class FakeOrderRepository : IOrderRepository
         AddCalls++;
         AddedOrder = order;
         AddCancellationToken = cancellationToken;
-        return Task.FromResult(AddFailure is null
-            ? Result<long>.Success(AddVersion)
-            : Result<long>.Failure(AddFailure));
+        if (AddFailure is not null)
+            return Task.FromResult(Result<long>.Failure(AddFailure));
+        order.UpdatePersistenceVersion(1);
+        order.ClearCommittedDomainEvents();
+        LoadedOrder = order;
+        return Task.FromResult(Result<long>.Success(order.Version));
     }
 
     public Task<Result<long>> SaveAsync(
         Order order,
-        long expectedVersion,
         CancellationToken cancellationToken)
     {
         SaveCalls++;
         Journal?.Add(SaveJournalEntry(order));
         SavedOrder = order;
-        CapturedExpectedVersion = expectedVersion;
-        CapturedExpectedVersions.Add(expectedVersion);
+        SavedDomainEvents = [.. order.DomainEvents];
+        CapturedOrderVersion = order.Version;
+        CapturedOrderVersions.Add(order.Version);
         SavedStatuses.Add(order.Status);
         SaveCancellationToken = cancellationToken;
         var configuredFailure = SaveResults.Count > 0
@@ -83,34 +95,36 @@ internal sealed class FakeOrderRepository : IOrderRepository
                 Result<long>.Failure(configuredFailure));
         if (EnforceVersionChecks
             && LoadedOrder is not null
-            && LoadedOrder.Version != expectedVersion)
+            && _persistedVersion != order.Version)
             return Task.FromResult(
                 Result<long>.Failure(
                     ApplicationErrors.OrderVersionConflict));
-        var version = SaveVersion ?? expectedVersion + 1;
-        LoadedOrder = new VersionedOrder(order, version);
-        return Task.FromResult(Result<long>.Success(version));
+        var version = order.Version + 1;
+        order.UpdatePersistenceVersion(version);
+        order.ClearCommittedDomainEvents();
+        LoadedOrder = order;
+        return Task.FromResult(Result<long>.Success(order.Version));
     }
 
     public Task<Result<long>> SavePaymentAsync(
         Order order,
-        long expectedVersion,
         TransactionId transactionId,
         CancellationToken cancellationToken)
     {
         SavePaymentCalls++;
         Journal?.Add("Repository.SavePayment.Paid");
-        CapturedExpectedVersion = expectedVersion;
-        CapturedExpectedVersions.Add(expectedVersion);
+        CapturedOrderVersion = order.Version;
+        CapturedOrderVersions.Add(order.Version);
         CapturedTransactionId = transactionId;
         SavePaymentCancellationToken = cancellationToken;
         SavedOrder = order;
+        SavedDomainEvents = [.. order.DomainEvents];
         if (SavePaymentFailure is not null)
             return Task.FromResult(
                 Result<long>.Failure(SavePaymentFailure));
         if (EnforceVersionChecks
             && LoadedOrder is not null
-            && LoadedOrder.Version != expectedVersion)
+            && _persistedVersion != order.Version)
             return Task.FromResult(
                 Result<long>.Failure(
                     ApplicationErrors.OrderVersionConflict));
@@ -121,9 +135,11 @@ internal sealed class FakeOrderRepository : IOrderRepository
                 Result<long>.Failure(
                     PaymentErrors.TransactionIdAlreadyUsed));
         ClaimedTransactionIds[transactionId.Value] = order.Id;
-        var version = expectedVersion + 1;
-        LoadedOrder = new VersionedOrder(order, version);
-        return Task.FromResult(Result<long>.Success(version));
+        var version = order.Version + 1;
+        order.UpdatePersistenceVersion(version);
+        order.ClearCommittedDomainEvents();
+        LoadedOrder = order;
+        return Task.FromResult(Result<long>.Success(order.Version));
     }
 
     private static string SaveJournalEntry(Order order)

@@ -33,7 +33,6 @@ public sealed class ReservationReleaseCoordinator
 
     public async Task<Result<long>> ReleaseForFailedCheckoutAsync(
         Order order,
-        long currentVersion,
         CheckoutAttemptId checkoutAttemptId,
         CancellationToken cancellationToken)
     {
@@ -42,12 +41,11 @@ public sealed class ReservationReleaseCoordinator
         if (attempt is null || attempt.Id != checkoutAttemptId)
             return Result<long>.Failure(CheckoutErrors.AttemptMismatch);
         return await ReleaseAsync(
-            order, currentVersion, checkoutAttemptId, cancellationToken);
+            order, checkoutAttemptId, cancellationToken);
     }
 
     public async Task<Result<long>> ReleaseForTerminalOrderAsync(
         Order order,
-        long currentVersion,
         CheckoutAttemptId checkoutAttemptId,
         CancellationToken cancellationToken)
     {
@@ -57,12 +55,11 @@ public sealed class ReservationReleaseCoordinator
         if (order.CheckoutAttempt?.Id != checkoutAttemptId)
             return Result<long>.Failure(CheckoutErrors.AttemptMismatch);
         return await ReleaseAsync(
-            order, currentVersion, checkoutAttemptId, cancellationToken);
+            order, checkoutAttemptId, cancellationToken);
     }
 
     private async Task<Result<long>> ReleaseAsync(
         Order order,
-        long currentVersion,
         CheckoutAttemptId checkoutAttemptId,
         CancellationToken cancellationToken)
     {
@@ -76,7 +73,6 @@ public sealed class ReservationReleaseCoordinator
             .ThenByDescending(reservation => reservation.VendorId.Value)
             .ToArray();
 
-        var version = currentVersion;
         foreach (var reservation in releasable)
         {
             var released = await _inventoryReservationService.ReleaseAsync(
@@ -117,12 +113,11 @@ public sealed class ReservationReleaseCoordinator
             if (recorded.IsFailure)
                 return Result<long>.Failure(recorded.Error);
             var saved = await _orderRepository.SaveAsync(
-                order, version, cancellationToken);
+                order, cancellationToken);
             if (saved.IsFailure)
                 return Result<long>.Failure(saved.Error);
-            version = saved.Value;
         }
 
-        return Result<long>.Success(version);
+        return Result<long>.Success(order.Version);
     }
 }

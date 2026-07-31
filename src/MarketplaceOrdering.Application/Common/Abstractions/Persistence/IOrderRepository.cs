@@ -1,4 +1,3 @@
-using MarketplaceOrdering.Application.Common.Models;
 using MarketplaceOrdering.Domain.Orders;
 using MarketplaceOrdering.Domain.Shared;
 using MarketplaceOrdering.Domain.ValueObjects;
@@ -7,7 +6,7 @@ namespace MarketplaceOrdering.Application.Common.Abstractions.Persistence;
 
 public interface IOrderRepository
 {
-    Task<Result<VersionedOrder>> LoadAsync(
+    Task<Result<Order>> LoadAsync(
         OrderId orderId,
         CancellationToken cancellationToken);
 
@@ -17,12 +16,10 @@ public interface IOrderRepository
 
     Task<Result<long>> SaveAsync(
         Order order,
-        long expectedVersion,
         CancellationToken cancellationToken);
 
     Task<Result<long>> SavePaymentAsync(
         Order order,
-        long expectedVersion,
         TransactionId transactionId,
         CancellationToken cancellationToken);
 }

@@ -15,8 +15,6 @@ public abstract class AggregateRoot<TId>
 
     public TId Id { get; }
 
-    public long Version { get; private set; }
-
     public IReadOnlyCollection<IDomainEvent> DomainEvents => _readOnlyDomainEvents;
 
     protected void RaiseDomainEvent(IDomainEvent domainEvent)
@@ -27,13 +25,4 @@ public abstract class AggregateRoot<TId>
 
     internal void ClearCommittedDomainEvents() => _domainEvents.Clear();
 
-    internal void UpdateVersion(long version)
-    {
-        if (version < 0)
-        {
-            throw new ArgumentOutOfRangeException(nameof(version), "Version cannot be negative.");
-        }
-
-        Version = version;
-    }
 }

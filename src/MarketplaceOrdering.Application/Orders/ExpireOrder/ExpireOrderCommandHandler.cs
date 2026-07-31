@@ -43,15 +43,14 @@ public sealed class ExpireOrderCommandHandler
             orderId.Value, cancellationToken);
         if (loaded.IsFailure)
             return Result<ExpireOrderResult>.Failure(loaded.Error);
-        var order = loaded.Value.Order;
+        var order = loaded.Value;
         var expired = order.Expire(_clock.UtcNow);
         if (expired.IsFailure)
             return Result<ExpireOrderResult>.Failure(expired.Error);
         var saved = await _orderRepository.SaveAsync(
-            order, loaded.Value.Version, cancellationToken);
+            order, cancellationToken);
         if (saved.IsFailure)
             return Result<ExpireOrderResult>.Failure(saved.Error);
-        var version = saved.Value;
         var attempt = order.CheckoutAttempt!;
         if (attempt.Reservations.Any(reservation =>
                 reservation.Status is InventoryReservationStatus.Active
@@ -59,10 +58,9 @@ public sealed class ExpireOrderCommandHandler
         {
             var released = await _releaseCoordinator
                 .ReleaseForTerminalOrderAsync(
-                    order, version, attempt.Id, cancellationToken);
+                    order, attempt.Id, cancellationToken);
             if (released.IsFailure)
                 return Result<ExpireOrderResult>.Failure(released.Error);
-            version = released.Value;
         }
         return Result<ExpireOrderResult>.Success(
             new ExpireOrderResult(
@@ -72,6 +70,6 @@ public sealed class ExpireOrderCommandHandler
                 attempt.Reservations.Any(reservation =>
                     reservation.Status ==
                         InventoryReservationStatus.ReleasePending),
-                version));
+                order.Version));
     }
 }

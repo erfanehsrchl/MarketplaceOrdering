@@ -1,6 +1,5 @@
 using MarketplaceOrdering.Application.Common.Abstractions.Persistence;
 using MarketplaceOrdering.Application.Common.Errors;
-using MarketplaceOrdering.Application.Common.Models;
 using MarketplaceOrdering.Domain.Orders;
 using MarketplaceOrdering.Domain.Payments;
 using MarketplaceOrdering.Domain.Shared;
@@ -11,7 +10,7 @@ namespace MarketplaceOrdering.Infrastructure.Persistence.InMemory;
 public sealed class InMemoryOrderRepository : IOrderRepository
 {
     private readonly object _syncRoot = new();
-    private readonly Dictionary<OrderId, StoredOrder> _orders = [];
+    private readonly Dictionary<OrderId, OrderPersistenceSnapshot> _orders = [];
     private readonly Dictionary<TransactionId, OrderId> _transactionOwners = [];
 
     public void Reset()
@@ -23,20 +22,18 @@ public sealed class InMemoryOrderRepository : IOrderRepository
         }
     }
 
-    public Task<Result<VersionedOrder>> LoadAsync(
+    public Task<Result<Order>> LoadAsync(
         OrderId orderId,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         lock (_syncRoot)
         {
-            if (!_orders.TryGetValue(orderId, out var stored))
-                return Task.FromResult(Result<VersionedOrder>.Failure(
+            if (!_orders.TryGetValue(orderId, out var snapshot))
+                return Task.FromResult(Result<Order>.Failure(
                     ApplicationErrors.OrderNotFound));
-            var order = OrderPersistenceSnapshotMapper.Rehydrate(stored.Snapshot);
-            order.UpdateVersion(stored.Version);
-            return Task.FromResult(Result<VersionedOrder>.Success(
-                new VersionedOrder(order, stored.Version)));
+            var order = OrderPersistenceSnapshotMapper.Rehydrate(snapshot);
+            return Task.FromResult(Result<Order>.Success(order));
         }
     }
 
@@ -51,33 +48,38 @@ public sealed class InMemoryOrderRepository : IOrderRepository
             if (_orders.ContainsKey(order.Id))
                 return Task.FromResult(Result<long>.Failure(
                     ApplicationErrors.OrderAlreadyExists));
-            var snapshot = OrderPersistenceSnapshotMapper.Capture(order);
-            _orders.Add(order.Id, new StoredOrder(snapshot, 1));
-            order.UpdateVersion(1);
+            if (order.Version != 0)
+                return Task.FromResult(Result<long>.Failure(
+                    ApplicationErrors.OrderVersionConflict));
+            const long initialVersion = 1;
+            var snapshot = OrderPersistenceSnapshotMapper.Capture(
+                order, initialVersion);
+            _orders.Add(order.Id, snapshot);
+            order.UpdatePersistenceVersion(initialVersion);
             order.ClearCommittedDomainEvents();
-            return Task.FromResult(Result<long>.Success(1));
+            return Task.FromResult(Result<long>.Success(initialVersion));
         }
     }
 
     public Task<Result<long>> SaveAsync(
         Order order,
-        long expectedVersion,
         CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         ArgumentNullException.ThrowIfNull(order);
         lock (_syncRoot)
         {
-            if (!_orders.TryGetValue(order.Id, out var stored))
+            if (!_orders.TryGetValue(order.Id, out var persistedSnapshot))
                 return Task.FromResult(Result<long>.Failure(
                     ApplicationErrors.OrderNotFound));
-            if (stored.Version != expectedVersion)
+            if (persistedSnapshot.Version != order.Version)
                 return Task.FromResult(Result<long>.Failure(
                     ApplicationErrors.OrderVersionConflict));
-            var snapshot = OrderPersistenceSnapshotMapper.Capture(order);
-            var version = checked(expectedVersion + 1);
-            _orders[order.Id] = new StoredOrder(snapshot, version);
-            order.UpdateVersion(version);
+            var version = checked(order.Version + 1);
+            var snapshot = OrderPersistenceSnapshotMapper.Capture(
+                order, version);
+            _orders[order.Id] = snapshot;
+            order.UpdatePersistenceVersion(version);
             order.ClearCommittedDomainEvents();
             return Task.FromResult(Result<long>.Success(version));
         }
@@ -85,7 +87,6 @@ public sealed class InMemoryOrderRepository : IOrderRepository
 
     public Task<Result<long>> SavePaymentAsync(
         Order order,
-        long expectedVersion,
         TransactionId transactionId,
         CancellationToken cancellationToken)
     {
@@ -94,10 +95,10 @@ public sealed class InMemoryOrderRepository : IOrderRepository
         ArgumentNullException.ThrowIfNull(transactionId);
         lock (_syncRoot)
         {
-            if (!_orders.TryGetValue(order.Id, out var stored))
+            if (!_orders.TryGetValue(order.Id, out var persistedSnapshot))
                 return Task.FromResult(Result<long>.Failure(
                     ApplicationErrors.OrderNotFound));
-            if (stored.Version != expectedVersion)
+            if (persistedSnapshot.Version != order.Version)
                 return Task.FromResult(Result<long>.Failure(
                     ApplicationErrors.OrderVersionConflict));
             if (order.Payment?.TransactionId != transactionId)
@@ -108,25 +109,23 @@ public sealed class InMemoryOrderRepository : IOrderRepository
                 if (owner != order.Id)
                     return Task.FromResult(Result<long>.Failure(
                         PaymentErrors.TransactionIdAlreadyUsed));
-                var persisted = stored.Snapshot.Payment;
-                if (stored.Snapshot.Status == OrderStatus.Paid
+                var persisted = persistedSnapshot.Payment;
+                if (persistedSnapshot.Status == OrderStatus.Paid
                     && persisted?.TransactionId == transactionId
                     && persisted.Amount == order.Payment.Amount
                     && persisted.PaidAt == order.Payment.PaidAt
                     && order.DomainEvents.Count == 0)
-                    return Task.FromResult(Result<long>.Success(stored.Version));
+                    return Task.FromResult(
+                        Result<long>.Success(persistedSnapshot.Version));
             }
-            var snapshot = OrderPersistenceSnapshotMapper.Capture(order);
-            var version = checked(expectedVersion + 1);
+            var version = checked(order.Version + 1);
+            var snapshot = OrderPersistenceSnapshotMapper.Capture(
+                order, version);
             _transactionOwners[transactionId] = order.Id;
-            _orders[order.Id] = new StoredOrder(snapshot, version);
-            order.UpdateVersion(version);
+            _orders[order.Id] = snapshot;
+            order.UpdatePersistenceVersion(version);
             order.ClearCommittedDomainEvents();
             return Task.FromResult(Result<long>.Success(version));
         }
     }
-
-    private sealed record StoredOrder(
-        OrderPersistenceSnapshot Snapshot,
-        long Version);
 }

@@ -1,6 +1,5 @@
 using FluentAssertions;
 using MarketplaceOrdering.Application.Common.Errors;
-using MarketplaceOrdering.Application.Common.Models;
 using MarketplaceOrdering.Application.Payments.ConfirmPayment;
 using MarketplaceOrdering.Application.Tests.Checkout;
 using MarketplaceOrdering.Domain.Payments;
@@ -35,7 +34,7 @@ public sealed class ConfirmPaymentCommandHandlerTests
         result.Value.Version.Should().Be(10);
         context.Repository.SavePaymentCalls.Should().Be(1);
         context.Repository.SaveCalls.Should().Be(5);
-        context.Repository.CapturedExpectedVersion.Should().Be(9);
+        context.Repository.CapturedOrderVersion.Should().Be(9);
         context.Repository.CapturedTransactionId!.Value.Should()
             .Be(transactionId);
         context.Repository.SavePaymentCancellationToken.Should()
@@ -114,8 +113,7 @@ public sealed class ConfirmPaymentCommandHandlerTests
         var checkout = await context.Handler.Handle(
             CheckoutHandlerTestData.Command(context.Order),
             CancellationToken.None);
-        context.Repository.LoadedOrder = new VersionedOrder(
-            context.Order, checkout.Value.Version);
+        context.Repository.LoadedOrder = context.Order;
         return context;
     }
 }

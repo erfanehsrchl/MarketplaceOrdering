@@ -20,11 +20,11 @@ public sealed class GetOrderDetailsAndMappingTests
             2026, 2, 1, 0, 0, 0, TimeSpan.Zero);
         order.SelectDiscountCode(
             DiscountCode.Create("SAVE").Value, selectedAt);
-        var eventCount = order.DomainEvents.Count;
         var repository = new FakeOrderRepository
         {
-            LoadedOrder = ApplicationTestData.Versioned(order, 9)
+            LoadedOrder = ApplicationTestData.Persisted(order, 9)
         };
+        var eventCount = order.DomainEvents.Count;
         using var cancellation = new CancellationTokenSource();
 
         var result = await new GetOrderDetailsQueryHandler(repository)
@@ -79,7 +79,8 @@ public sealed class GetOrderDetailsAndMappingTests
         order.AttachFulfillmentPlan(attemptId, plan, at);
         var eventCount = order.DomainEvents.Count;
 
-        var details = OrderDetailsMapper.Map(order, 3);
+        order.UpdatePersistenceVersion(3);
+        var details = OrderDetailsMapper.Map(order);
 
         details.CheckoutAttempt.Should().NotBeNull();
         details.CheckoutAttempt!.CheckoutAttemptId.Should().Be(attemptId.Value);
@@ -92,8 +93,9 @@ public sealed class GetOrderDetailsAndMappingTests
     [Fact]
     public void ReturnedItemCollection_ShouldNotExposeMutableState()
     {
-        var details = OrderDetailsMapper.Map(
+        var order = ApplicationTestData.Persisted(
             ApplicationTestData.CreateOrder(), 1);
+        var details = OrderDetailsMapper.Map(order);
 
         var action = () => ((ICollection<
             MarketplaceOrdering.Application.Orders.Models.OrderItemDetails>)
