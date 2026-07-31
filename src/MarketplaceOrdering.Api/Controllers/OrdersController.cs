@@ -30,7 +30,8 @@ public sealed class OrdersController : ControllerBase
     [ProducesResponseType(StatusCodes.Status201Created)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
     public async Task<IActionResult> Create(
-        CreateOrderRequest request)
+        CreateOrderRequest request,
+        CancellationToken cancellationToken)
     {
         var command = new CreateOrderCommand(
             request.CustomerId,
@@ -38,7 +39,7 @@ public sealed class OrdersController : ControllerBase
             request.Items?.Select(item => new CreateOrderItemInput(
                 item.ProductId, item.ProductName, item.Quantity)).ToArray());
         var result = await _sender.Send(
-            command, HttpContext.RequestAborted);
+            command, cancellationToken);
         return result.IsFailure
             ? ResultHttpMapper.Failure(result.Error)
             : CreatedAtAction(
@@ -50,11 +51,13 @@ public sealed class OrdersController : ControllerBase
     [HttpGet("{orderId:guid}")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
-    public async Task<IActionResult> Get(Guid orderId)
+    public async Task<IActionResult> Get(
+        Guid orderId,
+        CancellationToken cancellationToken)
     {
         var result = await _sender.Send(
             new GetOrderDetailsQuery(orderId),
-            HttpContext.RequestAborted);
+            cancellationToken);
         return result.IsFailure
             ? ResultHttpMapper.Failure(result.Error)
             : Ok(result.Value);
@@ -63,13 +66,14 @@ public sealed class OrdersController : ControllerBase
     [HttpPost("{orderId:guid}/items")]
     public async Task<IActionResult> AddItem(
         Guid orderId,
-        AddOrderItemRequest request)
+        AddOrderItemRequest request,
+        CancellationToken cancellationToken)
     {
         var result = await _sender.Send(
             new AddOrderItemCommand(
                 orderId, request.ProductId,
                 request.ProductName, request.Quantity),
-            HttpContext.RequestAborted);
+            cancellationToken);
         return result.IsFailure
             ? ResultHttpMapper.Failure(result.Error)
             : Ok(result.Value);
@@ -79,12 +83,13 @@ public sealed class OrdersController : ControllerBase
     public async Task<IActionResult> ChangeItemQuantity(
         Guid orderId,
         Guid productId,
-        ChangeOrderItemQuantityRequest request)
+        ChangeOrderItemQuantityRequest request,
+        CancellationToken cancellationToken)
     {
         var result = await _sender.Send(
             new ChangeOrderItemQuantityCommand(
                 orderId, productId, request.Quantity),
-            HttpContext.RequestAborted);
+            cancellationToken);
         return result.IsFailure
             ? ResultHttpMapper.Failure(result.Error)
             : Ok(result.Value);
@@ -93,11 +98,12 @@ public sealed class OrdersController : ControllerBase
     [HttpDelete("{orderId:guid}/items/{productId:guid}")]
     public async Task<IActionResult> RemoveItem(
         Guid orderId,
-        Guid productId)
+        Guid productId,
+        CancellationToken cancellationToken)
     {
         var result = await _sender.Send(
             new RemoveOrderItemCommand(orderId, productId),
-            HttpContext.RequestAborted);
+            cancellationToken);
         return result.IsFailure
             ? ResultHttpMapper.Failure(result.Error)
             : Ok(result.Value);
@@ -106,23 +112,26 @@ public sealed class OrdersController : ControllerBase
     [HttpPut("{orderId:guid}/discount")]
     public async Task<IActionResult> ApplyDiscount(
         Guid orderId,
-        ApplyDiscountCodeRequest request)
+        ApplyDiscountCodeRequest request,
+        CancellationToken cancellationToken)
     {
         var result = await _sender.Send(
             new ApplyDiscountCodeCommand(
                 orderId, request.DiscountCode),
-            HttpContext.RequestAborted);
+            cancellationToken);
         return result.IsFailure
             ? ResultHttpMapper.Failure(result.Error)
             : Ok(result.Value);
     }
 
     [HttpDelete("{orderId:guid}/discount")]
-    public async Task<IActionResult> RemoveDiscount(Guid orderId)
+    public async Task<IActionResult> RemoveDiscount(
+        Guid orderId,
+        CancellationToken cancellationToken)
     {
         var result = await _sender.Send(
             new RemoveDiscountCodeCommand(orderId),
-            HttpContext.RequestAborted);
+            cancellationToken);
         return result.IsFailure
             ? ResultHttpMapper.Failure(result.Error)
             : Ok(result.Value);
@@ -131,33 +140,38 @@ public sealed class OrdersController : ControllerBase
     [HttpPost("{orderId:guid}/cancel")]
     public async Task<IActionResult> Cancel(
         Guid orderId,
-        CancelOrderRequest request)
+        CancelOrderRequest request,
+        CancellationToken cancellationToken)
     {
         var result = await _sender.Send(
             new CancelOrderCommand(orderId, request.Reason),
-            HttpContext.RequestAborted);
+            cancellationToken);
         return result.IsFailure
             ? ResultHttpMapper.Failure(result.Error)
             : Ok(result.Value);
     }
 
     [HttpPost("{orderId:guid}/expire")]
-    public async Task<IActionResult> Expire(Guid orderId)
+    public async Task<IActionResult> Expire(
+        Guid orderId,
+        CancellationToken cancellationToken)
     {
         var result = await _sender.Send(
             new ExpireOrderCommand(orderId),
-            HttpContext.RequestAborted);
+            cancellationToken);
         return result.IsFailure
             ? ResultHttpMapper.Failure(result.Error)
             : Ok(result.Value);
     }
 
     [HttpPost("{orderId:guid}/reservation-releases/retry")]
-    public async Task<IActionResult> RetryReservationReleases(Guid orderId)
+    public async Task<IActionResult> RetryReservationReleases(
+        Guid orderId,
+        CancellationToken cancellationToken)
     {
         var result = await _sender.Send(
             new RetryPendingReservationReleasesCommand(orderId),
-            HttpContext.RequestAborted);
+            cancellationToken);
         return result.IsFailure
             ? ResultHttpMapper.Failure(result.Error)
             : Ok(result.Value);

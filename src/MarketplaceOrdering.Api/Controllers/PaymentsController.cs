@@ -24,7 +24,8 @@ public sealed class PaymentsController : ControllerBase
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Confirm(
         Guid orderId,
-        ConfirmPaymentRequest request)
+        ConfirmPaymentRequest request,
+        CancellationToken cancellationToken)
     {
         var result = await _sender.Send(
             new ConfirmPaymentCommand(
@@ -32,7 +33,7 @@ public sealed class PaymentsController : ControllerBase
                 request.TransactionId,
                 request.Amount,
                 request.PaidAt),
-            HttpContext.RequestAborted);
+            cancellationToken);
         return result.IsFailure
             ? ResultHttpMapper.Failure(result.Error)
             : Ok(result.Value);

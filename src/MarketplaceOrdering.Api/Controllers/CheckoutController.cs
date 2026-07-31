@@ -24,12 +24,13 @@ public sealed class CheckoutController : ControllerBase
         StatusCodes.Status503ServiceUnavailable)]
     public async Task<IActionResult> Checkout(
         Guid orderId,
-        [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey)
+        [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey,
+        CancellationToken cancellationToken)
     {
         var result = await _sender.Send(
             new CheckoutOrderCommand(
                 orderId, idempotencyKey ?? string.Empty),
-            HttpContext.RequestAborted);
+            cancellationToken);
         return result.IsFailure
             ? ResultHttpMapper.Failure(result.Error)
             : Ok(result.Value);

@@ -5,6 +5,7 @@ using MarketplaceOrdering.Domain.Orders;
 using MarketplaceOrdering.Domain.Shared;
 using MarketplaceOrdering.Domain.ValueObjects;
 using MarketplaceOrdering.Infrastructure.Time;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -82,6 +83,130 @@ internal sealed class UnexpectedFailureApiFactory
             CancellationToken cancellationToken) =>
             throw new InvalidOperationException("sensitive internal detail");
     }
+}
+
+internal sealed class CancellationProbeApiFactory
+    : WebApplicationFactory<Program>
+{
+    internal CancellationProbeOrderRepository Repository { get; } = new();
+
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseEnvironment("Development");
+        builder.ConfigureLogging(logging => logging.ClearProviders());
+        builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<IOrderRepository>();
+            services.AddSingleton<IOrderRepository>(Repository);
+        });
+    }
+}
+
+internal sealed class CancellationResponseApiFactory
+    : WebApplicationFactory<Program>
+{
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseEnvironment("Development");
+        builder.ConfigureLogging(logging => logging.ClearProviders());
+        builder.ConfigureServices(services =>
+        {
+            services.RemoveAll<IOrderRepository>();
+            services.AddSingleton<IOrderRepository>(
+                new ImmediateCancellationOrderRepository());
+        });
+    }
+}
+
+internal sealed class PreCancelledRequestApiFactory
+    : WebApplicationFactory<Program>
+{
+    protected override void ConfigureWebHost(IWebHostBuilder builder)
+    {
+        builder.UseEnvironment("Development");
+        builder.ConfigureLogging(logging => logging.ClearProviders());
+        builder.ConfigureServices(services =>
+            services.AddSingleton<IStartupFilter, PreCancelledRequestFilter>());
+    }
+
+    private sealed class PreCancelledRequestFilter : IStartupFilter
+    {
+        public Action<IApplicationBuilder> Configure(
+            Action<IApplicationBuilder> next) =>
+            application =>
+            {
+                application.Use(async (context, continuation) =>
+                {
+                    context.RequestAborted = new CancellationToken(
+                        canceled: true);
+                    await continuation();
+                });
+                next(application);
+            };
+    }
+}
+
+internal sealed class CancellationProbeOrderRepository : IOrderRepository
+{
+    private readonly TaskCompletionSource _entered =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+    internal Task Entered => _entered.Task;
+    internal CancellationToken CapturedCancellationToken { get; private set; }
+
+    public async Task<Result<VersionedOrder>> LoadAsync(
+        OrderId orderId,
+        CancellationToken cancellationToken)
+    {
+        CapturedCancellationToken = cancellationToken;
+        _entered.TrySetResult();
+        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        throw new InvalidOperationException("Unreachable.");
+    }
+
+    public Task<Result<long>> AddAsync(
+        Order order,
+        CancellationToken cancellationToken) =>
+        throw new InvalidOperationException("Not used by this test.");
+
+    public Task<Result<long>> SaveAsync(
+        Order order,
+        long expectedVersion,
+        CancellationToken cancellationToken) =>
+        throw new InvalidOperationException("Not used by this test.");
+
+    public Task<Result<long>> SavePaymentAsync(
+        Order order,
+        long expectedVersion,
+        TransactionId transactionId,
+        CancellationToken cancellationToken) =>
+        throw new InvalidOperationException("Not used by this test.");
+}
+
+internal sealed class ImmediateCancellationOrderRepository : IOrderRepository
+{
+    public Task<Result<VersionedOrder>> LoadAsync(
+        OrderId orderId,
+        CancellationToken cancellationToken) =>
+        throw new OperationCanceledException(cancellationToken);
+
+    public Task<Result<long>> AddAsync(
+        Order order,
+        CancellationToken cancellationToken) =>
+        throw new InvalidOperationException("Not used by this test.");
+
+    public Task<Result<long>> SaveAsync(
+        Order order,
+        long expectedVersion,
+        CancellationToken cancellationToken) =>
+        throw new InvalidOperationException("Not used by this test.");
+
+    public Task<Result<long>> SavePaymentAsync(
+        Order order,
+        long expectedVersion,
+        TransactionId transactionId,
+        CancellationToken cancellationToken) =>
+        throw new InvalidOperationException("Not used by this test.");
 }
 
 internal sealed class TestClock(DateTimeOffset utcNow) : IClock

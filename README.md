@@ -87,6 +87,13 @@ flowchart LR
 
 MediatR is confined to Application dispatch contracts and the API dispatch boundary. Domain and Domain Events remain framework-independent and do not implement MediatR notification contracts. MassTransit is intentionally not used because these operations are synchronous, in-process requests rather than distributed broker messages. MediatR also provides a conventional extension point for future pipeline behaviors, but no pipeline behaviors are currently registered.
 
+ASP.NET Core binds each Controller action's `CancellationToken` to
+`HttpContext.RequestAborted`. Controllers pass that token to `ISender.Send`;
+Handlers pass the same token to every asynchronous Application Port, and the
+Infrastructure adapters check it before reading or mutating in-memory state.
+`OperationCanceledException` remains transport cancellation rather than a
+business `Result` or API error response.
+
 ## Visual Architecture and Project Flows
 
 The diagrams in this section summarize the project boundaries, Domain ownership, orchestration order, failure handling, and demonstration paths implemented by the solution.
@@ -225,6 +232,14 @@ sequenceDiagram
 ```
 
 Processing is saved before Offer or Discount calls. The FulfillmentPlan is saved before Inventory calls. Each Reservation intent precedes Reserve, and each Active result is saved before another Vendor is processed.
+
+The request token follows API â†’ MediatR â†’ Handler â†’ Port â†’ Adapter.
+Cancellation before a confirmed external Reservation may stop the workflow.
+Once Inventory confirms a Reservation, cancellation does not erase that side
+effect: Checkout still attempts bounded release and records recovery when
+release cannot be confirmed. This safety cleanup deliberately uses its own
+five-second token because the request token is already cancelled; compensation
+ordering and recovery semantics are otherwise unchanged.
 
 ### Checkout Failure and Compensation Flow
 

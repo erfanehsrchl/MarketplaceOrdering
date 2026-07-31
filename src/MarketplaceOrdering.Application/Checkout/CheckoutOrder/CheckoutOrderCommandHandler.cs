@@ -21,6 +21,8 @@ namespace MarketplaceOrdering.Application.Checkout.CheckoutOrder;
 public sealed class CheckoutOrderCommandHandler
     : IRequestHandler<CheckoutOrderCommand, Result<CheckoutOperationResult>>
 {
+    private static readonly TimeSpan PostReservationCleanupTimeout =
+        TimeSpan.FromSeconds(5);
     private readonly IOrderRepository _orderRepository;
     private readonly IProductOfferProvider _productOfferProvider;
     private readonly IDiscountPolicyProvider _discountPolicyProvider;
@@ -230,13 +232,15 @@ public sealed class CheckoutOrderCommandHandler
                 && reserved.Value is InventoryReservationSucceeded
                     cancellationSuccess)
             {
+                using var cleanupCancellation = new CancellationTokenSource(
+                    PostReservationCleanupTimeout);
                 await CleanupKnownSuccessAfterCancellationAsync(
                     order.Id,
                     attemptId,
                     vendor.VendorId,
                     operationKey,
                     cancellationSuccess.ReservationId,
-                    cancellationToken);
+                    cleanupCancellation.Token);
             }
             cancellationToken.ThrowIfCancellationRequested();
             if (reserved.IsFailure)

@@ -26,18 +26,21 @@ public sealed class DemoController : ControllerBase
     }
 
     [HttpPost("reset")]
-    public async Task<IActionResult> Reset()
+    public async Task<IActionResult> Reset(
+        CancellationToken cancellationToken)
     {
         if (!_environment.IsDevelopment())
             return NotFound();
         var response = await _seeder.SeedAsync(
             DemoDataSeeder.DefaultScenario,
-            HttpContext.RequestAborted);
+            cancellationToken);
         return Ok(response);
     }
 
     [HttpPost("scenarios/{scenarioName}")]
-    public async Task<IActionResult> SelectScenario(string scenarioName)
+    public async Task<IActionResult> SelectScenario(
+        string scenarioName,
+        CancellationToken cancellationToken)
     {
         if (!_environment.IsDevelopment())
             return NotFound();
@@ -52,19 +55,20 @@ public sealed class DemoController : ControllerBase
                     ["scenario"] = scenarioName
                 }));
         var response = await _seeder.SeedAsync(
-            normalized, HttpContext.RequestAborted);
+            normalized, cancellationToken);
         return Ok(response);
     }
 
     [HttpPost("reservation-recovery/run")]
     public async Task<IActionResult> RunReservationRecovery(
+        CancellationToken cancellationToken,
         [FromQuery] int maximumCount = 100)
     {
         if (!_environment.IsDevelopment())
             return NotFound();
         var result = await _sender.Send(
             new RecoverOrphanReservationsCommand(maximumCount),
-            HttpContext.RequestAborted);
+            cancellationToken);
         return result.IsFailure
             ? ResultHttpMapper.Failure(result.Error)
             : Ok(result.Value);

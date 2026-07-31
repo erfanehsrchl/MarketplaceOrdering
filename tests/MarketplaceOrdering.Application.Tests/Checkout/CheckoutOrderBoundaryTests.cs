@@ -1,13 +1,46 @@
 using FluentAssertions;
 using MarketplaceOrdering.Application.Common.Abstractions.Idempotency;
 using MarketplaceOrdering.Application.Common.Errors;
+using MarketplaceOrdering.Domain.Discounts;
+using MarketplaceOrdering.Domain.Money;
 using MarketplaceOrdering.Domain.Orders;
+using MarketplaceOrdering.Domain.Shared;
 using MarketplaceOrdering.Domain.ValueObjects;
 
 namespace MarketplaceOrdering.Application.Tests.Checkout;
 
 public sealed class CheckoutOrderBoundaryTests
 {
+    [Fact]
+    public async Task SuccessfulCheckout_ShouldPropagateExactTokenToEveryPort()
+    {
+        var context = CheckoutHandlerTestData.Create();
+        var code = DiscountCode.Create("SAVE").Value;
+        context.Order.SelectDiscountCode(code, context.Clock.UtcNow);
+        context.Discounts.Policy = DiscountPolicy.Create(
+            code,
+            FixedDiscountValue.Create(Money.Create(1).Value).Value,
+            true).Value;
+        using var cancellation = new CancellationTokenSource();
+
+        await context.Handler.Handle(
+            CheckoutHandlerTestData.Command(context.Order),
+            cancellation.Token);
+
+        context.Idempotency.CapturedCancellationToken.Should()
+            .Be(cancellation.Token);
+        context.Repository.LoadCancellationToken.Should()
+            .Be(cancellation.Token);
+        context.Repository.SaveCancellationToken.Should()
+            .Be(cancellation.Token);
+        context.Offers.CapturedCancellationToken.Should()
+            .Be(cancellation.Token);
+        context.Discounts.CapturedCancellationToken.Should()
+            .Be(cancellation.Token);
+        context.Inventory.CapturedCancellationTokens.Should()
+            .OnlyContain(token => token == cancellation.Token);
+    }
+
     [Fact]
     public async Task PreCancelledToken_ShouldReachClaimAndCancellationShouldPropagate()
     {
@@ -93,8 +126,41 @@ public sealed class CheckoutOrderBoundaryTests
         await action.Should().ThrowAsync<OperationCanceledException>();
         context.Inventory.ReservationRequests.Should().ContainSingle();
         context.Inventory.ReleaseRequests.Should().ContainSingle();
-        context.Inventory.CapturedCancellationTokens.Should()
-            .OnlyContain(token => token == cancellation.Token);
+        context.Inventory.CapturedCancellationTokens[0].Should()
+            .Be(cancellation.Token);
+        context.Inventory.CapturedCancellationTokens[1].Should()
+            .NotBe(cancellation.Token);
+        context.Inventory.CapturedCancellationTokens[1].CanBeCanceled.Should()
+            .BeTrue();
+        context.Inventory.CapturedCancellationTokens[1]
+            .IsCancellationRequested.Should().BeFalse();
         context.Idempotency.FailCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task CancellationAfterKnownReservationSuccess_WhenCleanupFails_ShouldRecordRecovery()
+    {
+        var context = CheckoutHandlerTestData.Create(2);
+        using var cancellation = new CancellationTokenSource();
+        context.Inventory.AfterReserve = _ => cancellation.Cancel();
+        context.Inventory.ReleaseResults[CheckoutHandlerTestData.Vendor(1)] =
+            Result<MarketplaceOrdering.Application.Common.Abstractions.Inventory
+                .InventoryReleaseOutcome>.Success(
+                    new MarketplaceOrdering.Application.Common.Abstractions
+                        .Inventory.InventoryReleaseFailed(
+                            "inventory.release_failed"));
+
+        var action = () => context.Handler.Handle(
+            CheckoutHandlerTestData.Command(context.Order),
+            cancellation.Token);
+
+        await action.Should().ThrowAsync<OperationCanceledException>();
+        context.Inventory.ReservationRequests.Should().ContainSingle();
+        context.Inventory.ReleaseRequests.Should().ContainSingle();
+        context.Recovery.Records.Should().ContainSingle();
+        context.Recovery.CapturedCancellationToken.Should()
+            .Be(context.Inventory.CapturedCancellationTokens[1]);
+        context.Recovery.CapturedCancellationToken.Should()
+            .NotBe(cancellation.Token);
     }
 }

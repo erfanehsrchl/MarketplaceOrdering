@@ -11,6 +11,23 @@ namespace MarketplaceOrdering.Application.Tests.Checkout;
 
 public sealed class RecoverOrphanReservationsCommandHandlerTests
 {
+    [Fact]
+    public async Task Handle_ShouldPropagateExactTokenToRecoveryAndInventory()
+    {
+        var store = new FakeReservationRecoveryStore();
+        var inventory = new FakeInventoryReservationService();
+        await store.UpsertAsync(Record(1), CancellationToken.None);
+        using var cancellation = new CancellationTokenSource();
+
+        await CreateHandler(store, inventory).Handle(
+            new RecoverOrphanReservationsCommand(10),
+            cancellation.Token);
+
+        store.CapturedCancellationToken.Should().Be(cancellation.Token);
+        inventory.CapturedCancellationTokens.Should()
+            .OnlyContain(token => token == cancellation.Token);
+    }
+
     [Theory]
     [InlineData(0)]
     [InlineData(-1)]
