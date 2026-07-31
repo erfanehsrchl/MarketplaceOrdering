@@ -15,7 +15,9 @@ public static class DependencyInjection
                 typeof(DependencyInjection).Assembly));
         services.AddSingleton<ProportionalDiscountAllocator>();
         services.AddSingleton<FulfillmentPlanner>();
-        services.AddScoped<ReservationReleaseCoordinator>();
+        services.AddScoped<
+            IReservationReleaseCoordinator,
+            ReservationReleaseCoordinator>();
         return services;
     }
 }

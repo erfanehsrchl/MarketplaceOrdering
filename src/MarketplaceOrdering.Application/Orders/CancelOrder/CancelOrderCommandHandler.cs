@@ -14,16 +14,13 @@ public sealed class CancelOrderCommandHandler
 {
     private readonly IOrderRepository _orderRepository;
     private readonly IClock _clock;
-    private readonly ReservationReleaseCoordinator _releaseCoordinator;
+    private readonly IReservationReleaseCoordinator _releaseCoordinator;
 
     public CancelOrderCommandHandler(
         IOrderRepository orderRepository,
         IClock clock,
-        ReservationReleaseCoordinator releaseCoordinator)
+        IReservationReleaseCoordinator releaseCoordinator)
     {
-        ArgumentNullException.ThrowIfNull(orderRepository);
-        ArgumentNullException.ThrowIfNull(clock);
-        ArgumentNullException.ThrowIfNull(releaseCoordinator);
         _orderRepository = orderRepository;
         _clock = clock;
         _releaseCoordinator = releaseCoordinator;

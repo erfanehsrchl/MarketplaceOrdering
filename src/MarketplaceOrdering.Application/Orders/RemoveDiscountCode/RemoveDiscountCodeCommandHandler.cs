@@ -17,8 +17,6 @@ public sealed class RemoveDiscountCodeCommandHandler
 
     public RemoveDiscountCodeCommandHandler(IOrderRepository repository, IClock clock)
     {
-        ArgumentNullException.ThrowIfNull(repository);
-        ArgumentNullException.ThrowIfNull(clock);
         _repository = repository;
         _clock = clock;
     }

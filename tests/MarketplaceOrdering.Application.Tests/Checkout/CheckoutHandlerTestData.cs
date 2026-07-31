@@ -21,7 +21,7 @@ internal sealed class CheckoutTestContext
     internal required FakeCheckoutIdempotencyStore Idempotency { get; init; }
     internal required FakeReservationRecoveryStore Recovery { get; init; }
     internal required FakeClock Clock { get; init; }
-    internal required ReservationReleaseCoordinator Coordinator { get; init; }
+    internal required IReservationReleaseCoordinator Coordinator { get; init; }
     internal required List<string> Journal { get; init; }
 }
 

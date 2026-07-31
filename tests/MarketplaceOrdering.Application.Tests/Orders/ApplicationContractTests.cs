@@ -9,10 +9,15 @@ using MarketplaceOrdering.Application.Common.Abstractions.Offers;
 using MarketplaceOrdering.Application.Common.Abstractions.Persistence;
 using MarketplaceOrdering.Application.Common.Abstractions.Recovery;
 using MarketplaceOrdering.Application.Common.Abstractions.Time;
+using MarketplaceOrdering.Application.Checkout.CheckoutOrder;
+using MarketplaceOrdering.Application.Checkout.RetryPendingReservationReleases;
+using MarketplaceOrdering.Application.Checkout.Services;
 using MarketplaceOrdering.Application.Orders.AddOrderItem;
 using MarketplaceOrdering.Application.Orders.ApplyDiscountCode;
+using MarketplaceOrdering.Application.Orders.CancelOrder;
 using MarketplaceOrdering.Application.Orders.ChangeOrderItemQuantity;
 using MarketplaceOrdering.Application.Orders.CreateOrder;
+using MarketplaceOrdering.Application.Orders.ExpireOrder;
 using MarketplaceOrdering.Application.Orders.GetOrderDetails;
 using MarketplaceOrdering.Application.Orders.Models;
 using MarketplaceOrdering.Application.Orders.RemoveDiscountCode;
@@ -21,6 +26,8 @@ using MarketplaceOrdering.Application.Tests.Fakes;
 using MarketplaceOrdering.Domain.Orders;
 using MarketplaceOrdering.Domain.Shared;
 using MarketplaceOrdering.Domain.ValueObjects;
+using MarketplaceOrdering.Domain.Discounts;
+using MarketplaceOrdering.Domain.Fulfillment;
 using MarketplaceOrdering.Infrastructure.Persistence.InMemory;
 
 namespace MarketplaceOrdering.Application.Tests.Orders;
@@ -64,6 +71,56 @@ public sealed class ApplicationContractTests
             contract => contract.IsGenericType
                 && contract.GetGenericTypeDefinition()
                     == typeof(IRequestHandler<,>)));
+    }
+
+    [Fact]
+    public void ReusableWorkflowService_ShouldExposeAnApplicationInterface()
+    {
+        typeof(IReservationReleaseCoordinator).IsInterface.Should().BeTrue();
+        typeof(ReservationReleaseCoordinator).GetInterfaces()
+            .Should().Contain(typeof(IReservationReleaseCoordinator));
+        ((object)typeof(IReservationReleaseCoordinator).Assembly).Should()
+            .BeSameAs(typeof(CreateOrderCommandHandler).Assembly);
+        ((object)typeof(ReservationReleaseCoordinator).Assembly).Should()
+            .BeSameAs(typeof(CreateOrderCommandHandler).Assembly);
+
+        Type[] consumers =
+        [
+            typeof(CheckoutOrderCommandHandler),
+            typeof(CancelOrderCommandHandler),
+            typeof(ExpireOrderCommandHandler),
+            typeof(RetryPendingReservationReleasesCommandHandler)
+        ];
+        consumers.SelectMany(type => type.GetConstructors())
+            .SelectMany(constructor => constructor.GetParameters())
+            .Should().Contain(parameter =>
+                parameter.ParameterType ==
+                    typeof(IReservationReleaseCoordinator))
+            .And.NotContain(parameter =>
+                parameter.ParameterType ==
+                    typeof(ReservationReleaseCoordinator));
+    }
+
+    [Fact]
+    public void HandlersAndDeterministicAlgorithms_ShouldRemainConcreteOnly()
+    {
+        var applicationAssembly =
+            typeof(CreateOrderCommandHandler).Assembly;
+        applicationAssembly.GetTypes()
+            .Where(type => type.Name.EndsWith(
+                "CommandHandler", StringComparison.Ordinal)
+                || type.Name.EndsWith(
+                    "QueryHandler", StringComparison.Ordinal))
+            .Should().NotContain(handler =>
+                applicationAssembly.GetType(
+                    $"{handler.Namespace}.I{handler.Name}") != null);
+        typeof(FulfillmentPlanner).GetInterfaces().Should().BeEmpty();
+        typeof(ProportionalDiscountAllocator).GetInterfaces()
+            .Should().BeEmpty();
+        ((object)typeof(IReservationReleaseCoordinator).Assembly).Should()
+            .NotBeSameAs(typeof(InMemoryOrderRepository).Assembly);
+        ((object)typeof(IReservationReleaseCoordinator).Assembly).Should()
+            .NotBeSameAs(typeof(IDomainEvent).Assembly);
     }
 
     [Fact]

@@ -78,8 +78,8 @@ public sealed class DependencyInjectionRegistrationTests
         scope.ServiceProvider.GetRequiredService<ISender>()
             .Should().NotBeNull();
         scope.ServiceProvider
-            .GetRequiredService<ReservationReleaseCoordinator>()
-            .Should().NotBeNull();
+            .GetRequiredService<IReservationReleaseCoordinator>()
+            .Should().BeOfType<ReservationReleaseCoordinator>();
         scope.ServiceProvider.GetRequiredService<FulfillmentPlanner>()
             .Should().NotBeNull();
         scope.ServiceProvider
@@ -130,9 +130,12 @@ public sealed class DependencyInjectionRegistrationTests
             || (descriptor.ImplementationType != null
                 && descriptor.ImplementationType.Name.EndsWith(
                     "UseCase", StringComparison.Ordinal)));
-        services.Single(descriptor => descriptor.ServiceType ==
-                typeof(ReservationReleaseCoordinator))
-            .Lifetime.Should().Be(ServiceLifetime.Scoped);
+        var releaseCoordinator = services.Single(descriptor =>
+            descriptor.ServiceType ==
+                typeof(IReservationReleaseCoordinator));
+        releaseCoordinator.ImplementationType.Should()
+            .Be(typeof(ReservationReleaseCoordinator));
+        releaseCoordinator.Lifetime.Should().Be(ServiceLifetime.Scoped);
         services.Single(descriptor => descriptor.ServiceType ==
                 typeof(FulfillmentPlanner))
             .Lifetime.Should().Be(ServiceLifetime.Singleton);
@@ -192,6 +195,22 @@ public sealed class DependencyInjectionRegistrationTests
                 "CommandHandler", StringComparison.Ordinal)
                 || type.Name.EndsWith(
                     "QueryHandler", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void MissingOutputPortRegistrationsAreDetectedDuringValidation()
+    {
+        var services = new ServiceCollection();
+        services.AddApplication();
+
+        var build = () => services.BuildServiceProvider(
+            new ServiceProviderOptions
+            {
+                ValidateOnBuild = true,
+                ValidateScopes = true
+            });
+
+        build.Should().Throw<AggregateException>();
     }
 
     [Fact]

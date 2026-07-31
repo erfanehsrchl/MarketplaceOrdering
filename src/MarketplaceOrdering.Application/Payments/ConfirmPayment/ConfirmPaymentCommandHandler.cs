@@ -14,7 +14,6 @@ public sealed class ConfirmPaymentCommandHandler
 
     public ConfirmPaymentCommandHandler(IOrderRepository orderRepository)
     {
-        ArgumentNullException.ThrowIfNull(orderRepository);
         _orderRepository = orderRepository;
     }
 

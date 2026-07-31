@@ -56,7 +56,7 @@ Domain references no other project. Application references Domain. Infrastructur
 
 API remains the final Composition Root and chooses which modules form the running application. Registration details stay with the layer that owns the services:
 
-- Application owns `AddApplication()`, including MediatR assembly scanning for transient handlers, scoped `ReservationReleaseCoordinator`, and singleton `ProportionalDiscountAllocator` and `FulfillmentPlanner`.
+- Application owns `AddApplication()`, including MediatR assembly scanning for transient handlers, scoped `IReservationReleaseCoordinator` mapped to `ReservationReleaseCoordinator`, and singleton `ProportionalDiscountAllocator` and `FulfillmentPlanner`.
 - Infrastructure owns `AddInfrastructure()`, including singleton adapters and their Application-port mappings.
 - API invokes both methods and keeps only API-specific registrations such as `DemoDataSeeder`.
 - Domain has no dependency on `Microsoft.Extensions.DependencyInjection` or any container abstraction.
@@ -66,6 +66,8 @@ Every stateful adapter is registered first by its concrete type and then mapped 
 ### Application dispatch
 
 Application operations use CQRS-style request names: state changes are Commands handled by CommandHandlers, while reads are Queries handled by QueryHandlers. API controllers depend on MediatR `ISender`, map HTTP input to an Application request, and call `Send`. MediatR performs in-process dispatch; the selected Handler retains orchestration responsibility for Domain behavior, output Ports, persistence, response mapping, errors, and cancellation.
+
+Reusable asynchronous Application workflow services expose interfaces when they coordinate ports across multiple handlers; MediatR handlers do not receive redundant per-handler interfaces, and pure deterministic algorithms remain concrete. Required constructor dependencies rely on enabled Nullable Reference Types and validated DI graphs. Runtime null guards remain at public method and configuration boundaries, while expected business validation remains Result-based.
 
 API request models are projected into Application inputs, with collection
 projections materialized once at the API boundary. Short-lived request and

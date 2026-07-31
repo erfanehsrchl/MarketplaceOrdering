@@ -18,8 +18,6 @@ public sealed class AddOrderItemCommandHandler
 
     public AddOrderItemCommandHandler(IOrderRepository repository, IClock clock)
     {
-        ArgumentNullException.ThrowIfNull(repository);
-        ArgumentNullException.ThrowIfNull(clock);
         _repository = repository;
         _clock = clock;
     }

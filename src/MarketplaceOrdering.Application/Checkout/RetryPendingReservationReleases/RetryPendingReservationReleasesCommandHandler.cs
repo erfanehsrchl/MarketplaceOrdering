@@ -13,14 +13,12 @@ public sealed class RetryPendingReservationReleasesCommandHandler
     : IRequestHandler<RetryPendingReservationReleasesCommand, Result<RetryPendingReservationReleasesResult>>
 {
     private readonly IOrderRepository _orderRepository;
-    private readonly ReservationReleaseCoordinator _releaseCoordinator;
+    private readonly IReservationReleaseCoordinator _releaseCoordinator;
 
     public RetryPendingReservationReleasesCommandHandler(
         IOrderRepository orderRepository,
-        ReservationReleaseCoordinator releaseCoordinator)
+        IReservationReleaseCoordinator releaseCoordinator)
     {
-        ArgumentNullException.ThrowIfNull(orderRepository);
-        ArgumentNullException.ThrowIfNull(releaseCoordinator);
         _orderRepository = orderRepository;
         _releaseCoordinator = releaseCoordinator;
     }

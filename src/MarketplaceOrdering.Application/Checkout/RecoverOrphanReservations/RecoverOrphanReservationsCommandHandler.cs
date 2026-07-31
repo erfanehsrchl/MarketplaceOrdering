@@ -19,9 +19,6 @@ public sealed class RecoverOrphanReservationsCommandHandler
         IInventoryReservationService inventoryReservationService,
         IClock clock)
     {
-        ArgumentNullException.ThrowIfNull(recoveryStore);
-        ArgumentNullException.ThrowIfNull(inventoryReservationService);
-        ArgumentNullException.ThrowIfNull(clock);
         _recoveryStore = recoveryStore;
         _inventoryService = inventoryReservationService;
         _clock = clock;

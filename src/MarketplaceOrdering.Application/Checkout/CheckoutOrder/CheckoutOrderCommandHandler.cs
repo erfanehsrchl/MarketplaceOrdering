@@ -31,7 +31,7 @@ public sealed class CheckoutOrderCommandHandler
     private readonly IReservationRecoveryStore _reservationRecoveryStore;
     private readonly IClock _clock;
     private readonly FulfillmentPlanner _fulfillmentPlanner;
-    private readonly ReservationReleaseCoordinator _releaseCoordinator;
+    private readonly IReservationReleaseCoordinator _releaseCoordinator;
 
     public CheckoutOrderCommandHandler(
         IOrderRepository orderRepository,
@@ -42,17 +42,8 @@ public sealed class CheckoutOrderCommandHandler
         IReservationRecoveryStore reservationRecoveryStore,
         IClock clock,
         FulfillmentPlanner fulfillmentPlanner,
-        ReservationReleaseCoordinator releaseCoordinator)
+        IReservationReleaseCoordinator releaseCoordinator)
     {
-        ArgumentNullException.ThrowIfNull(orderRepository);
-        ArgumentNullException.ThrowIfNull(productOfferProvider);
-        ArgumentNullException.ThrowIfNull(discountPolicyProvider);
-        ArgumentNullException.ThrowIfNull(inventoryReservationService);
-        ArgumentNullException.ThrowIfNull(idempotencyStore);
-        ArgumentNullException.ThrowIfNull(reservationRecoveryStore);
-        ArgumentNullException.ThrowIfNull(clock);
-        ArgumentNullException.ThrowIfNull(fulfillmentPlanner);
-        ArgumentNullException.ThrowIfNull(releaseCoordinator);
         _orderRepository = orderRepository;
         _productOfferProvider = productOfferProvider;
         _discountPolicyProvider = discountPolicyProvider;

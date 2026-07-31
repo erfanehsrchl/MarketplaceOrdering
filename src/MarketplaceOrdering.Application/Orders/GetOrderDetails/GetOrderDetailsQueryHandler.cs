@@ -15,7 +15,6 @@ public sealed class GetOrderDetailsQueryHandler
 
     public GetOrderDetailsQueryHandler(IOrderRepository repository)
     {
-        ArgumentNullException.ThrowIfNull(repository);
         _repository = repository;
     }
 

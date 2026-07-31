@@ -26,7 +26,6 @@ public sealed class InMemoryInventoryReservationService
 
     public InMemoryInventoryReservationService(IClock clock)
     {
-        ArgumentNullException.ThrowIfNull(clock);
         _clock = clock;
     }
 

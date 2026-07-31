@@ -11,6 +11,7 @@ using MarketplaceOrdering.Domain.ValueObjects;
 namespace MarketplaceOrdering.Application.Checkout.Services;
 
 public sealed class ReservationReleaseCoordinator
+    : IReservationReleaseCoordinator
 {
     private readonly IInventoryReservationService _inventoryReservationService;
     private readonly IOrderRepository _orderRepository;
@@ -22,10 +23,6 @@ public sealed class ReservationReleaseCoordinator
         IReservationRecoveryStore reservationRecoveryStore,
         IClock clock)
     {
-        ArgumentNullException.ThrowIfNull(inventoryReservationService);
-        ArgumentNullException.ThrowIfNull(orderRepository);
-        ArgumentNullException.ThrowIfNull(reservationRecoveryStore);
-        ArgumentNullException.ThrowIfNull(clock);
         _inventoryReservationService = inventoryReservationService;
         _orderRepository = orderRepository;
         _clock = clock;
