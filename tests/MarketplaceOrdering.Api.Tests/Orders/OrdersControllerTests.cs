@@ -97,6 +97,24 @@ public sealed class OrdersControllerTests
     }
 
     [Fact]
+    public async Task MissingItemsPreservesApplicationInvalidRequest()
+    {
+        using var factory = new MarketplaceOrderingApiFactory();
+        using var client = factory.CreateClient();
+
+        var response = await client.PostAsJsonAsync(
+            "/api/orders",
+            new CreateOrderRequest(
+                DemoDataSeeder.CustomerId.Value,
+                "Address",
+                null));
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await response.Content.ReadFromJsonAsync<ApiErrorResponse>())!
+            .Code.Should().Be("application.invalid_request");
+    }
+
+    [Fact]
     public async Task EditingFlowUsesDomainRulesAndPersistsEachMutation()
     {
         using var factory = new MarketplaceOrderingApiFactory();

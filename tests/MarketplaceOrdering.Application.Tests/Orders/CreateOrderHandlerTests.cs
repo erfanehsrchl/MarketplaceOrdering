@@ -2,6 +2,7 @@ using FluentAssertions;
 using MarketplaceOrdering.Application.Common.Errors;
 using MarketplaceOrdering.Application.Orders.CreateOrder;
 using MarketplaceOrdering.Application.Tests.Fakes;
+using MarketplaceOrdering.Domain.ValueObjects;
 
 namespace MarketplaceOrdering.Application.Tests.Orders;
 
@@ -16,6 +17,25 @@ public sealed class CreateOrderCommandHandlerTests
             new(Guid.Parse("40000000-0000-0000-0000-000000000000"),
                 "Second", 3)
         ]);
+
+    [Fact]
+    public void Command_ShouldPreserveScalarsAndOrderedApplicationInputs()
+    {
+        IReadOnlyList<CreateOrderItemInput> items =
+        [
+            new(Guid.NewGuid(), "First", 1),
+            new(Guid.NewGuid(), "Second", 2)
+        ];
+        var customerId = Guid.NewGuid();
+
+        var command = new CreateOrderCommand(
+            customerId, "Address", items);
+
+        command.CustomerId.Should().Be(customerId);
+        command.DeliveryAddress.Should().Be("Address");
+        command.Items.Should().BeSameAs(items);
+        command.Items.Should().Equal(items);
+    }
 
     [Fact]
     public async Task ValidCommand_ShouldCreatePersistAndMapOrder()
@@ -38,6 +58,32 @@ public sealed class CreateOrderCommandHandlerTests
         repository.SaveCalls.Should().Be(0);
         repository.AddedOrder!.CreatedAt.Should().Be(result.Value.CreatedAt);
         repository.AddCancellationToken.Should().Be(cancellation.Token);
+
+        repository.AddedOrder.ChangeItemQuantity(
+            repository.AddedOrder.Items.First().ProductId,
+            Quantity.Create(4).Value,
+            clock.UtcNow.AddMinutes(1));
+        result.Value.Items.First().Quantity.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Handler_ShouldNotMutateCommandItems()
+    {
+        var items = new List<CreateOrderItemInput>
+        {
+            new(Guid.NewGuid(), "First", 1),
+            new(Guid.NewGuid(), "Second", 2)
+        };
+        var original = items.ToArray();
+        var command = new CreateOrderCommand(
+            Guid.NewGuid(), "Address", items);
+
+        await new CreateOrderCommandHandler(
+                new FakeOrderRepository(), new FakeClock())
+            .Handle(command, CancellationToken.None);
+
+        command.Items.Should().BeSameAs(items);
+        command.Items.Should().Equal(original);
     }
 
     [Fact]

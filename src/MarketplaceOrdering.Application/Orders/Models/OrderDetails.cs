@@ -1,53 +1,16 @@
-using System.Collections.ObjectModel;
-
 namespace MarketplaceOrdering.Application.Orders.Models;
 
-public sealed record OrderDetails
-{
-    private readonly ReadOnlyCollection<OrderItemDetails> _items;
-
-    public OrderDetails(
-        Guid orderId,
-        Guid customerId,
-        string deliveryAddress,
-        string status,
-        DateTimeOffset createdAt,
-        long version,
-        IReadOnlyCollection<OrderItemDetails> items,
-        SelectedDiscountDetails? selectedDiscount,
-        CheckoutAttemptSummary? checkoutAttempt,
-        PaymentDetails? payment = null,
-        CancellationDetails? cancellation = null,
-        DateTimeOffset? expiredAt = null,
-        bool hasPendingReservationReleases = false)
-    {
-        ArgumentNullException.ThrowIfNull(items);
-        OrderId = orderId;
-        CustomerId = customerId;
-        DeliveryAddress = deliveryAddress;
-        Status = status;
-        CreatedAt = createdAt;
-        Version = version;
-        _items = Array.AsReadOnly(items.ToArray());
-        SelectedDiscount = selectedDiscount;
-        CheckoutAttempt = checkoutAttempt;
-        Payment = payment;
-        Cancellation = cancellation;
-        ExpiredAt = expiredAt;
-        HasPendingReservationReleases = hasPendingReservationReleases;
-    }
-
-    public Guid OrderId { get; }
-    public Guid CustomerId { get; }
-    public string DeliveryAddress { get; }
-    public string Status { get; }
-    public DateTimeOffset CreatedAt { get; }
-    public long Version { get; }
-    public IReadOnlyCollection<OrderItemDetails> Items => _items;
-    public SelectedDiscountDetails? SelectedDiscount { get; }
-    public CheckoutAttemptSummary? CheckoutAttempt { get; }
-    public PaymentDetails? Payment { get; }
-    public CancellationDetails? Cancellation { get; }
-    public DateTimeOffset? ExpiredAt { get; }
-    public bool HasPendingReservationReleases { get; }
-}
+public sealed record OrderDetails(
+    Guid OrderId,
+    Guid CustomerId,
+    string DeliveryAddress,
+    string Status,
+    DateTimeOffset CreatedAt,
+    long Version,
+    IReadOnlyList<OrderItemDetails> Items,
+    SelectedDiscountDetails? SelectedDiscount,
+    CheckoutAttemptSummary? CheckoutAttempt,
+    PaymentDetails? Payment = null,
+    CancellationDetails? Cancellation = null,
+    DateTimeOffset? ExpiredAt = null,
+    bool HasPendingReservationReleases = false);

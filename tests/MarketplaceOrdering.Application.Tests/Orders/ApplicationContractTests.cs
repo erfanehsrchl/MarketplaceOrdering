@@ -1,4 +1,6 @@
 using MediatR;
+using System.Collections.ObjectModel;
+using System.Reflection;
 using FluentAssertions;
 using MarketplaceOrdering.Application.Common.Abstractions.Discounts;
 using MarketplaceOrdering.Application.Common.Abstractions.Idempotency;
@@ -13,6 +15,7 @@ using MarketplaceOrdering.Application.Orders.ApplyDiscountCode;
 using MarketplaceOrdering.Application.Orders.ChangeOrderItemQuantity;
 using MarketplaceOrdering.Application.Orders.CreateOrder;
 using MarketplaceOrdering.Application.Orders.GetOrderDetails;
+using MarketplaceOrdering.Application.Orders.Models;
 using MarketplaceOrdering.Application.Orders.RemoveDiscountCode;
 using MarketplaceOrdering.Application.Orders.RemoveOrderItem;
 using MarketplaceOrdering.Application.Tests.Fakes;
@@ -79,28 +82,31 @@ public sealed class ApplicationContractTests
     }
 
     [Fact]
-    public void InventoryRequest_ShouldCopyItems()
+    public void OrderedApplicationCollections_ShouldUseReadOnlyListContracts()
     {
-        var source = new[]
-        {
+        IReadOnlyList<InventoryReservationItem> items =
+        [
             new InventoryReservationItem(
                 ProductId.Create(Guid.NewGuid()).Value,
                 Quantity.Create(1).Value)
-        };
+        ];
         var request = new InventoryReservationRequest(
             OrderId.New(),
             CheckoutAttemptId.New(),
             CheckoutTestVendor(),
             ReservationOperationKey.Create("operation").Value,
-            source);
-        source[0] = new InventoryReservationItem(
-            ProductId.Create(Guid.NewGuid()).Value,
-            Quantity.Create(2).Value);
+            items);
 
-        request.Items.Single().Quantity.Value.Should().Be(1);
-        var action = () => ((ICollection<InventoryReservationItem>)
-            request.Items).Clear();
-        action.Should().Throw<NotSupportedException>();
+        typeof(CreateOrderCommand).GetProperty(
+                nameof(CreateOrderCommand.Items))!.PropertyType
+            .Should().Be(typeof(IReadOnlyList<CreateOrderItemInput>));
+        typeof(InventoryReservationRequest).GetProperty(
+                nameof(InventoryReservationRequest.Items))!.PropertyType
+            .Should().Be(typeof(IReadOnlyList<InventoryReservationItem>));
+        typeof(OrderDetails).GetProperty(
+                nameof(OrderDetails.Items))!.PropertyType
+            .Should().Be(typeof(IReadOnlyList<OrderItemDetails>));
+        request.Items.Should().Equal(items);
     }
 
     [Fact]
@@ -180,6 +186,34 @@ public sealed class ApplicationContractTests
             .Should().NotContain(name => name != null
                 && name.Contains(
                     "MassTransit", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void RequestContracts_ShouldNotExposeMutableListsOrReadOnlyCollectionBackingFields()
+    {
+        var requestTypes = typeof(CreateOrderCommand).Assembly.GetTypes()
+            .Where(type => type.GetInterfaces().Any(contract =>
+                contract.IsGenericType
+                && contract.GetGenericTypeDefinition()
+                    == typeof(IRequest<>)))
+            .ToArray();
+
+        requestTypes
+            .SelectMany(type => type.GetProperties(
+                BindingFlags.Instance | BindingFlags.Public))
+            .Should().NotContain(property =>
+                property.PropertyType.IsGenericType
+                && property.PropertyType.GetGenericTypeDefinition()
+                    == typeof(List<>));
+        requestTypes
+            .SelectMany(type => type.GetFields(
+                BindingFlags.Instance
+                | BindingFlags.NonPublic
+                | BindingFlags.DeclaredOnly))
+            .Should().NotContain(field =>
+                field.FieldType.IsGenericType
+                && field.FieldType.GetGenericTypeDefinition()
+                    == typeof(ReadOnlyCollection<>));
     }
 
     private static VendorId CheckoutTestVendor() =>

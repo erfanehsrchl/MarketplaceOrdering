@@ -33,11 +33,16 @@ public sealed class OrdersController : ControllerBase
         CreateOrderRequest request,
         CancellationToken cancellationToken)
     {
+        var items = request.Items?
+            .Select(item => new CreateOrderItemInput(
+                item.ProductId,
+                item.ProductName,
+                item.Quantity))
+            .ToArray();
         var command = new CreateOrderCommand(
             request.CustomerId,
             request.DeliveryAddress,
-            request.Items?.Select(item => new CreateOrderItemInput(
-                item.ProductId, item.ProductName, item.Quantity)).ToArray());
+            items);
         var result = await _sender.Send(
             command, cancellationToken);
         return result.IsFailure

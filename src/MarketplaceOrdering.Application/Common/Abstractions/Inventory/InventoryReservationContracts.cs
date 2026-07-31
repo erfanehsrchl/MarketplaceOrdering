@@ -1,34 +1,13 @@
-using System.Collections.ObjectModel;
 using MarketplaceOrdering.Domain.ValueObjects;
 
 namespace MarketplaceOrdering.Application.Common.Abstractions.Inventory;
 
-public sealed record InventoryReservationRequest
-{
-    private readonly ReadOnlyCollection<InventoryReservationItem> _items;
-
-    public InventoryReservationRequest(
-        OrderId orderId,
-        CheckoutAttemptId checkoutAttemptId,
-        VendorId vendorId,
-        ReservationOperationKey operationKey,
-        IReadOnlyCollection<InventoryReservationItem> items)
-    {
-        ArgumentNullException.ThrowIfNull(operationKey);
-        ArgumentNullException.ThrowIfNull(items);
-        OrderId = orderId;
-        CheckoutAttemptId = checkoutAttemptId;
-        VendorId = vendorId;
-        OperationKey = operationKey;
-        _items = Array.AsReadOnly(items.ToArray());
-    }
-
-    public OrderId OrderId { get; }
-    public CheckoutAttemptId CheckoutAttemptId { get; }
-    public VendorId VendorId { get; }
-    public ReservationOperationKey OperationKey { get; }
-    public IReadOnlyCollection<InventoryReservationItem> Items => _items;
-}
+public sealed record InventoryReservationRequest(
+    OrderId OrderId,
+    CheckoutAttemptId CheckoutAttemptId,
+    VendorId VendorId,
+    ReservationOperationKey OperationKey,
+    IReadOnlyList<InventoryReservationItem> Items);
 
 public sealed record InventoryReservationItem(
     ProductId ProductId,

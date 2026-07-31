@@ -67,6 +67,13 @@ Every stateful adapter is registered first by its concrete type and then mapped 
 
 Application operations use CQRS-style request names: state changes are Commands handled by CommandHandlers, while reads are Queries handled by QueryHandlers. API controllers depend on MediatR `ISender`, map HTTP input to an Application request, and call `Send`. MediatR performs in-process dispatch; the selected Handler retains orchestration responsibility for Domain behavior, output Ports, persistence, response mapping, errors, and cancellation.
 
+API request models are projected into Application inputs, with collection
+projections materialized once at the API boundary. Short-lived request and
+response contracts expose read-only collection interfaces and keep required
+collections non-null where existing validation semantics permit. Business
+validation remains in Handlers and Domain; stronger defensive snapshots remain
+reserved for long-lived Domain and Infrastructure state.
+
 ```mermaid
 flowchart LR
     CLIENT["Client"]
