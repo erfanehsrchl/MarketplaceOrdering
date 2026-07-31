@@ -1,8 +1,11 @@
 using System.Collections.ObjectModel;
+using MediatR;
+using MarketplaceOrdering.Application.Orders.Models;
+using MarketplaceOrdering.Domain.Shared;
 
 namespace MarketplaceOrdering.Application.Orders.CreateOrder;
 
-public sealed record CreateOrderCommand
+public sealed record CreateOrderCommand : IRequest<Result<OrderDetails>>
 {
     private readonly ReadOnlyCollection<CreateOrderItemInput>? _items;
 

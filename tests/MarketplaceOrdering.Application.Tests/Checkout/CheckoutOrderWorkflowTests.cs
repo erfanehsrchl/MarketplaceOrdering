@@ -10,10 +10,10 @@ public sealed class CheckoutOrderWorkflowTests
     [Fact]
     public async Task SuccessfulCheckout_ShouldPersistEveryBoundaryInOrder()
     {
-        var context = CheckoutUseCaseTestData.Create(2);
+        var context = CheckoutHandlerTestData.Create(2);
 
-        var result = await context.UseCase.ExecuteAsync(
-            CheckoutUseCaseTestData.Command(context.Order),
+        var result = await context.Handler.Handle(
+            CheckoutHandlerTestData.Command(context.Order),
             CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
@@ -56,10 +56,10 @@ public sealed class CheckoutOrderWorkflowTests
     [Fact]
     public async Task ReservationRequests_ShouldContainVendorAllocationsOnly()
     {
-        var context = CheckoutUseCaseTestData.Create(2);
+        var context = CheckoutHandlerTestData.Create(2);
 
-        await context.UseCase.ExecuteAsync(
-            CheckoutUseCaseTestData.Command(context.Order),
+        await context.Handler.Handle(
+            CheckoutHandlerTestData.Command(context.Order),
             CancellationToken.None);
 
         context.Inventory.ReservationRequests.Should().OnlyContain(
@@ -74,7 +74,7 @@ public sealed class CheckoutOrderWorkflowTests
     [Fact]
     public async Task SelectedDiscount_ShouldBeLoadedDuringCheckout()
     {
-        var context = CheckoutUseCaseTestData.Create();
+        var context = CheckoutHandlerTestData.Create();
         var code = MarketplaceOrdering.Domain.ValueObjects.DiscountCode
             .Create("SAVE").Value;
         context.Order.SelectDiscountCode(code, context.Clock.UtcNow);
@@ -87,8 +87,8 @@ public sealed class CheckoutOrderWorkflowTests
                 context.Clock.UtcNow.AddDays(-1),
                 context.Clock.UtcNow.AddDays(1)).Value;
 
-        var result = await context.UseCase.ExecuteAsync(
-            CheckoutUseCaseTestData.Command(context.Order),
+        var result = await context.Handler.Handle(
+            CheckoutHandlerTestData.Command(context.Order),
             CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();

@@ -14,11 +14,11 @@ public sealed class CheckoutPersistenceAndReleaseTests
     [Fact]
     public async Task ReservationSuccessSaveFailure_ShouldImmediatelyRelease()
     {
-        var context = CheckoutUseCaseTestData.Create();
+        var context = CheckoutHandlerTestData.Create();
         ConfigureReservationSuccessSaveFailure(context);
 
-        var result = await context.UseCase.ExecuteAsync(
-            CheckoutUseCaseTestData.Command(context.Order),
+        var result = await context.Handler.Handle(
+            CheckoutHandlerTestData.Command(context.Order),
             CancellationToken.None);
 
         result.Error.Should().Be(ApplicationErrors.OrderVersionConflict);
@@ -30,15 +30,15 @@ public sealed class CheckoutPersistenceAndReleaseTests
     [Fact]
     public async Task FailedImmediateRelease_ShouldCreateRecoveryRecord()
     {
-        var context = CheckoutUseCaseTestData.Create();
+        var context = CheckoutHandlerTestData.Create();
         ConfigureReservationSuccessSaveFailure(context);
-        var vendor = CheckoutUseCaseTestData.Vendor(1);
+        var vendor = CheckoutHandlerTestData.Vendor(1);
         context.Inventory.ReleaseResults[vendor] =
             Result<InventoryReleaseOutcome>.Success(
                 new InventoryReleaseFailed("release.unavailable"));
 
-        var result = await context.UseCase.ExecuteAsync(
-            CheckoutUseCaseTestData.Command(context.Order),
+        var result = await context.Handler.Handle(
+            CheckoutHandlerTestData.Command(context.Order),
             CancellationToken.None);
 
         result.Error.Should().Be(ApplicationErrors.OrderVersionConflict);
@@ -56,17 +56,17 @@ public sealed class CheckoutPersistenceAndReleaseTests
     [Fact]
     public async Task RecoveryPersistenceFailure_ShouldReturnStableRecoveryError()
     {
-        var context = CheckoutUseCaseTestData.Create();
+        var context = CheckoutHandlerTestData.Create();
         ConfigureReservationSuccessSaveFailure(context);
-        var vendor = CheckoutUseCaseTestData.Vendor(1);
+        var vendor = CheckoutHandlerTestData.Vendor(1);
         context.Inventory.ReleaseResults[vendor] =
             Result<InventoryReleaseOutcome>.Success(
                 new InventoryReleaseIndeterminate("release.unknown"));
         context.Recovery.UpsertFailure =
             ApplicationErrors.DependencyOperationFailed;
 
-        var result = await context.UseCase.ExecuteAsync(
-            CheckoutUseCaseTestData.Command(context.Order),
+        var result = await context.Handler.Handle(
+            CheckoutHandlerTestData.Command(context.Order),
             CancellationToken.None);
 
         result.Error.Code.Should().Be("checkout.recovery_record_failed");
@@ -79,7 +79,7 @@ public sealed class CheckoutPersistenceAndReleaseTests
     [Fact]
     public async Task ReleaseCoordinator_ShouldUseReverseAcquisitionOrderAndVersions()
     {
-        var context = CheckoutUseCaseTestData.Create(2);
+        var context = CheckoutHandlerTestData.Create(2);
         var attemptId = PrepareCompensatingOrder(context);
 
         var result = await context.Coordinator.ReleaseForFailedCheckoutAsync(
@@ -88,8 +88,8 @@ public sealed class CheckoutPersistenceAndReleaseTests
         result.Value.Should().Be(22);
         context.Inventory.ReleaseRequests.Select(request => request.VendorId)
             .Should().Equal(
-                CheckoutUseCaseTestData.Vendor(2),
-                CheckoutUseCaseTestData.Vendor(1));
+                CheckoutHandlerTestData.Vendor(2),
+                CheckoutHandlerTestData.Vendor(1));
         context.Repository.CapturedExpectedVersions.Should().Equal(20, 21);
         context.Order.CheckoutAttempt!.Reservations.Should().OnlyContain(
             reservation => reservation.Status ==
@@ -103,9 +103,9 @@ public sealed class CheckoutPersistenceAndReleaseTests
     public async Task ReleaseCoordinator_ShouldPersistUnknownReleaseAsPending(
         string outcome)
     {
-        var context = CheckoutUseCaseTestData.Create();
+        var context = CheckoutHandlerTestData.Create();
         var attemptId = PrepareCompensatingOrder(context);
-        var vendor = CheckoutUseCaseTestData.Vendor(1);
+        var vendor = CheckoutHandlerTestData.Vendor(1);
         context.Inventory.ReleaseResults[vendor] = outcome switch
         {
             "failed" => Result<InventoryReleaseOutcome>.Success(

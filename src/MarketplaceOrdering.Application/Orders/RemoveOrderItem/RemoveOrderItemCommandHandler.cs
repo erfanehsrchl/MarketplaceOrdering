@@ -1,3 +1,4 @@
+using MediatR;
 using MarketplaceOrdering.Application.Common.Abstractions.Persistence;
 using MarketplaceOrdering.Application.Common.Abstractions.Time;
 using MarketplaceOrdering.Application.Common.Errors;
@@ -8,12 +9,13 @@ using MarketplaceOrdering.Domain.ValueObjects;
 
 namespace MarketplaceOrdering.Application.Orders.RemoveOrderItem;
 
-public sealed class RemoveOrderItemUseCase
+public sealed class RemoveOrderItemCommandHandler
+    : IRequestHandler<RemoveOrderItemCommand, Result<OrderDetails>>
 {
     private readonly IOrderRepository _repository;
     private readonly IClock _clock;
 
-    public RemoveOrderItemUseCase(IOrderRepository repository, IClock clock)
+    public RemoveOrderItemCommandHandler(IOrderRepository repository, IClock clock)
     {
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(clock);
@@ -21,7 +23,7 @@ public sealed class RemoveOrderItemUseCase
         _clock = clock;
     }
 
-    public async Task<Result<OrderDetails>> ExecuteAsync(
+    public async Task<Result<OrderDetails>> Handle(
         RemoveOrderItemCommand command,
         CancellationToken cancellationToken)
     {

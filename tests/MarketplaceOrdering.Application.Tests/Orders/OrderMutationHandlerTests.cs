@@ -10,7 +10,7 @@ using MarketplaceOrdering.Domain.Orders.Events;
 
 namespace MarketplaceOrdering.Application.Tests.Orders;
 
-public sealed class OrderMutationUseCaseTests
+public sealed class OrderMutationHandlerTests
 {
     [Fact]
     public async Task AddItem_ShouldLoadMutateAndSaveAtLoadedVersion()
@@ -29,8 +29,8 @@ public sealed class OrderMutationUseCaseTests
             "Added",
             2);
 
-        var result = await new AddOrderItemUseCase(repository, clock)
-            .ExecuteAsync(command, cancellation.Token);
+        var result = await new AddOrderItemCommandHandler(repository, clock)
+            .Handle(command, cancellation.Token);
 
         result.Value.Version.Should().Be(8);
         result.Value.Items.Should().HaveCount(2);
@@ -50,8 +50,8 @@ public sealed class OrderMutationUseCaseTests
         var repository = RepositoryFor(order);
         var product = order.Items.Single();
 
-        var result = await new AddOrderItemUseCase(
-            repository, new FakeClock()).ExecuteAsync(
+        var result = await new AddOrderItemCommandHandler(
+            repository, new FakeClock()).Handle(
                 new AddOrderItemCommand(
                     order.Id.Value,
                     product.ProductId.Value,
@@ -71,8 +71,8 @@ public sealed class OrderMutationUseCaseTests
         var repository = RepositoryFor(order);
         var item = order.Items.Single();
 
-        var result = await new AddOrderItemUseCase(
-            repository, new FakeClock()).ExecuteAsync(
+        var result = await new AddOrderItemCommandHandler(
+            repository, new FakeClock()).Handle(
                 new AddOrderItemCommand(
                     order.Id.Value,
                     item.ProductId.Value,
@@ -90,8 +90,8 @@ public sealed class OrderMutationUseCaseTests
         var order = ApplicationTestData.CreateOrder();
         var repository = RepositoryFor(order, 5);
 
-        var result = await new ChangeOrderItemQuantityUseCase(
-            repository, new FakeClock()).ExecuteAsync(
+        var result = await new ChangeOrderItemQuantityCommandHandler(
+            repository, new FakeClock()).Handle(
                 new ChangeOrderItemQuantityCommand(
                     order.Id.Value,
                     order.Items.Single().ProductId.Value,
@@ -109,8 +109,8 @@ public sealed class OrderMutationUseCaseTests
         var order = ApplicationTestData.CreateOrder();
         var repository = RepositoryFor(order);
 
-        var result = await new ChangeOrderItemQuantityUseCase(
-            repository, new FakeClock()).ExecuteAsync(
+        var result = await new ChangeOrderItemQuantityCommandHandler(
+            repository, new FakeClock()).Handle(
                 new ChangeOrderItemQuantityCommand(
                     order.Id.Value, Guid.NewGuid(), 2),
                 CancellationToken.None);
@@ -125,8 +125,8 @@ public sealed class OrderMutationUseCaseTests
         var order = ApplicationTestData.CreateOrder();
         var repository = RepositoryFor(order);
 
-        var result = await new RemoveOrderItemUseCase(
-            repository, new FakeClock()).ExecuteAsync(
+        var result = await new RemoveOrderItemCommandHandler(
+            repository, new FakeClock()).Handle(
                 new RemoveOrderItemCommand(
                     order.Id.Value, order.Items.Single().ProductId.Value),
                 CancellationToken.None);
@@ -142,8 +142,8 @@ public sealed class OrderMutationUseCaseTests
         var repository = RepositoryFor(order);
         var removed = order.Items.First().ProductId;
 
-        var result = await new RemoveOrderItemUseCase(
-            repository, new FakeClock()).ExecuteAsync(
+        var result = await new RemoveOrderItemCommandHandler(
+            repository, new FakeClock()).Handle(
                 new RemoveOrderItemCommand(order.Id.Value, removed.Value),
                 CancellationToken.None);
 
@@ -158,15 +158,15 @@ public sealed class OrderMutationUseCaseTests
         var repository = RepositoryFor(order);
         var clock = new FakeClock();
 
-        var applied = await new ApplyDiscountCodeUseCase(repository, clock)
-            .ExecuteAsync(
+        var applied = await new ApplyDiscountCodeCommandHandler(repository, clock)
+            .Handle(
                 new ApplyDiscountCodeCommand(order.Id.Value, " save "),
                 CancellationToken.None);
 
         applied.Value.SelectedDiscount!.Code.Should().Be("SAVE");
         repository.LoadedOrder = ApplicationTestData.Versioned(order, 5);
-        var removed = await new RemoveDiscountCodeUseCase(repository, clock)
-            .ExecuteAsync(
+        var removed = await new RemoveDiscountCodeCommandHandler(repository, clock)
+            .Handle(
                 new RemoveDiscountCodeCommand(order.Id.Value),
                 CancellationToken.None);
 
@@ -180,8 +180,8 @@ public sealed class OrderMutationUseCaseTests
         var order = ApplicationTestData.CreateOrder();
         var repository = RepositoryFor(order);
 
-        var result = await new RemoveDiscountCodeUseCase(
-            repository, new FakeClock()).ExecuteAsync(
+        var result = await new RemoveDiscountCodeCommandHandler(
+            repository, new FakeClock()).Handle(
                 new RemoveDiscountCodeCommand(order.Id.Value),
                 CancellationToken.None);
 
@@ -194,8 +194,8 @@ public sealed class OrderMutationUseCaseTests
     {
         var repository = new FakeOrderRepository();
 
-        var result = await new AddOrderItemUseCase(
-            repository, new FakeClock()).ExecuteAsync(
+        var result = await new AddOrderItemCommandHandler(
+            repository, new FakeClock()).Handle(
                 new AddOrderItemCommand(
                     Guid.NewGuid(), Guid.NewGuid(), "Product", 1),
                 CancellationToken.None);
@@ -213,8 +213,8 @@ public sealed class OrderMutationUseCaseTests
         var repository = RepositoryFor(order);
         repository.SaveFailure = ApplicationErrors.OrderVersionConflict;
 
-        var result = await new AddOrderItemUseCase(
-            repository, new FakeClock()).ExecuteAsync(
+        var result = await new AddOrderItemCommandHandler(
+            repository, new FakeClock()).Handle(
                 new AddOrderItemCommand(
                     order.Id.Value, Guid.NewGuid(), "Product", 1),
                 CancellationToken.None);

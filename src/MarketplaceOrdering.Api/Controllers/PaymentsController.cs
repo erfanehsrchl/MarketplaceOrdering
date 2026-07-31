@@ -1,3 +1,4 @@
+using MediatR;
 using MarketplaceOrdering.Api.Contracts.Payments;
 using MarketplaceOrdering.Api.ErrorHandling;
 using MarketplaceOrdering.Application.Payments.ConfirmPayment;
@@ -9,11 +10,11 @@ namespace MarketplaceOrdering.Api.Controllers;
 [Route("api/orders/{orderId:guid}/payments")]
 public sealed class PaymentsController : ControllerBase
 {
-    private readonly ConfirmPaymentUseCase _confirmPayment;
+    private readonly ISender _sender;
 
-    public PaymentsController(ConfirmPaymentUseCase confirmPayment)
+    public PaymentsController(ISender sender)
     {
-        _confirmPayment = confirmPayment;
+        _sender = sender;
     }
 
     [HttpPost("confirm")]
@@ -25,7 +26,7 @@ public sealed class PaymentsController : ControllerBase
         Guid orderId,
         ConfirmPaymentRequest request)
     {
-        var result = await _confirmPayment.ExecuteAsync(
+        var result = await _sender.Send(
             new ConfirmPaymentCommand(
                 orderId,
                 request.TransactionId,

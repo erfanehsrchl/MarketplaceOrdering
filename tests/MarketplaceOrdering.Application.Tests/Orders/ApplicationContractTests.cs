@@ -1,3 +1,4 @@
+using MediatR;
 using FluentAssertions;
 using MarketplaceOrdering.Application.Common.Abstractions.Discounts;
 using MarketplaceOrdering.Application.Common.Abstractions.Idempotency;
@@ -15,7 +16,9 @@ using MarketplaceOrdering.Application.Orders.GetOrderDetails;
 using MarketplaceOrdering.Application.Orders.RemoveDiscountCode;
 using MarketplaceOrdering.Application.Orders.RemoveOrderItem;
 using MarketplaceOrdering.Application.Tests.Fakes;
+using MarketplaceOrdering.Domain.Shared;
 using MarketplaceOrdering.Domain.ValueObjects;
+using MarketplaceOrdering.Infrastructure.Persistence.InMemory;
 
 namespace MarketplaceOrdering.Application.Tests.Orders;
 
@@ -39,22 +42,25 @@ public sealed class ApplicationContractTests
     }
 
     [Fact]
-    public void UseCases_ShouldBeConcreteSealedClassesWithoutInterfaces()
+    public void Handlers_ShouldBeConcreteSealedClassesWithMediatRContracts()
     {
-        Type[] useCases =
+        Type[] handlers =
         [
-            typeof(CreateOrderUseCase),
-            typeof(AddOrderItemUseCase),
-            typeof(ChangeOrderItemQuantityUseCase),
-            typeof(RemoveOrderItemUseCase),
-            typeof(ApplyDiscountCodeUseCase),
-            typeof(RemoveDiscountCodeUseCase),
-            typeof(GetOrderDetailsUseCase)
+            typeof(CreateOrderCommandHandler),
+            typeof(AddOrderItemCommandHandler),
+            typeof(ChangeOrderItemQuantityCommandHandler),
+            typeof(RemoveOrderItemCommandHandler),
+            typeof(ApplyDiscountCodeCommandHandler),
+            typeof(RemoveDiscountCodeCommandHandler),
+            typeof(GetOrderDetailsQueryHandler)
         ];
 
-        useCases.Should().OnlyContain(type =>
+        handlers.Should().OnlyContain(type =>
             type.IsClass && type.IsSealed && !type.IsAbstract);
-        useCases.Should().OnlyContain(type => type.GetInterfaces().Length == 0);
+        handlers.Should().OnlyContain(type => type.GetInterfaces().Any(
+            contract => contract.IsGenericType
+                && contract.GetGenericTypeDefinition()
+                    == typeof(IRequestHandler<,>)));
     }
 
     [Fact]
@@ -109,7 +115,7 @@ public sealed class ApplicationContractTests
     [Fact]
     public void ApplicationAssembly_ShouldNotReferenceForbiddenLayers()
     {
-        var references = typeof(CreateOrderUseCase).Assembly
+        var references = typeof(CreateOrderCommandHandler).Assembly
             .GetReferencedAssemblies()
             .Select(reference => reference.Name)
             .ToArray();
@@ -118,9 +124,62 @@ public sealed class ApplicationContractTests
             name != null && (
                 name.Contains("AspNetCore", StringComparison.Ordinal)
                 || name.Contains("Infrastructure", StringComparison.Ordinal)
-                || name.Contains("EntityFrameworkCore", StringComparison.Ordinal)
-                || name.Contains("MediatR", StringComparison.Ordinal)))
+                || name.Contains("EntityFrameworkCore", StringComparison.Ordinal)))
             .Should().BeFalse();
+        references.Should().Contain("MediatR");
+    }
+
+    [Fact]
+    public void RequestsAndHandlers_ShouldFollowCqrsAndLayerBoundaries()
+    {
+        var applicationAssembly =
+            typeof(CreateOrderCommandHandler).Assembly;
+        var requests = applicationAssembly.GetTypes()
+            .Where(type => type.GetInterfaces().Any(contract =>
+                contract.IsGenericType
+                && contract.GetGenericTypeDefinition()
+                    == typeof(IRequest<>)))
+            .ToArray();
+        var handlers = applicationAssembly.GetTypes()
+            .Where(type => type.GetInterfaces().Any(contract =>
+                contract.IsGenericType
+                && contract.GetGenericTypeDefinition()
+                    == typeof(IRequestHandler<,>)))
+            .ToArray();
+
+        requests.Should().HaveCount(13);
+        requests.Should().OnlyContain(type =>
+            type.Name.EndsWith("Command", StringComparison.Ordinal)
+            || type.Name.EndsWith("Query", StringComparison.Ordinal));
+        handlers.Should().HaveCount(13);
+        handlers.Should().OnlyContain(type =>
+            type.Name.EndsWith(
+                "CommandHandler", StringComparison.Ordinal)
+            || type.Name.EndsWith(
+                "QueryHandler", StringComparison.Ordinal));
+
+        var domainAssembly = typeof(IDomainEvent).Assembly;
+        domainAssembly.GetReferencedAssemblies()
+            .Select(reference => reference.Name)
+            .Should().NotContain("MediatR");
+        domainAssembly.GetTypes()
+            .Where(typeof(IDomainEvent).IsAssignableFrom)
+            .Should().NotContain(type =>
+                typeof(INotification).IsAssignableFrom(type));
+        typeof(InMemoryOrderRepository).Assembly.GetTypes()
+            .Should().NotContain(type => type.Name.EndsWith(
+                "Handler", StringComparison.Ordinal));
+        new[]
+            {
+                applicationAssembly,
+                domainAssembly,
+                typeof(InMemoryOrderRepository).Assembly
+            }
+            .SelectMany(assembly => assembly.GetReferencedAssemblies())
+            .Select(reference => reference.Name)
+            .Should().NotContain(name => name != null
+                && name.Contains(
+                    "MassTransit", StringComparison.Ordinal));
     }
 
     private static VendorId CheckoutTestVendor() =>

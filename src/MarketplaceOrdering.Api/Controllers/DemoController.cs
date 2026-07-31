@@ -1,3 +1,4 @@
+using MediatR;
 using MarketplaceOrdering.Api.Configuration;
 using MarketplaceOrdering.Api.ErrorHandling;
 using MarketplaceOrdering.Application.Checkout.RecoverOrphanReservations;
@@ -12,16 +13,16 @@ public sealed class DemoController : ControllerBase
 {
     private readonly IHostEnvironment _environment;
     private readonly DemoDataSeeder _seeder;
-    private readonly RecoverOrphanReservationsUseCase _recoverReservations;
+    private readonly ISender _sender;
 
     public DemoController(
         IHostEnvironment environment,
         DemoDataSeeder seeder,
-        RecoverOrphanReservationsUseCase recoverReservations)
+        ISender sender)
     {
         _environment = environment;
         _seeder = seeder;
-        _recoverReservations = recoverReservations;
+        _sender = sender;
     }
 
     [HttpPost("reset")]
@@ -61,7 +62,7 @@ public sealed class DemoController : ControllerBase
     {
         if (!_environment.IsDevelopment())
             return NotFound();
-        var result = await _recoverReservations.ExecuteAsync(
+        var result = await _sender.Send(
             new RecoverOrphanReservationsCommand(maximumCount),
             HttpContext.RequestAborted);
         return result.IsFailure

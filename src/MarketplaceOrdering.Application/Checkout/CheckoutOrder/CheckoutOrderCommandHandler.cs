@@ -1,3 +1,4 @@
+using MediatR;
 using System.Globalization;
 using MarketplaceOrdering.Application.Checkout.Services;
 using MarketplaceOrdering.Application.Common.Abstractions.Discounts;
@@ -17,7 +18,8 @@ using MarketplaceOrdering.Domain.ValueObjects;
 
 namespace MarketplaceOrdering.Application.Checkout.CheckoutOrder;
 
-public sealed class CheckoutOrderUseCase
+public sealed class CheckoutOrderCommandHandler
+    : IRequestHandler<CheckoutOrderCommand, Result<CheckoutOperationResult>>
 {
     private readonly IOrderRepository _orderRepository;
     private readonly IProductOfferProvider _productOfferProvider;
@@ -29,7 +31,7 @@ public sealed class CheckoutOrderUseCase
     private readonly FulfillmentPlanner _fulfillmentPlanner;
     private readonly ReservationReleaseCoordinator _releaseCoordinator;
 
-    public CheckoutOrderUseCase(
+    public CheckoutOrderCommandHandler(
         IOrderRepository orderRepository,
         IProductOfferProvider productOfferProvider,
         IDiscountPolicyProvider discountPolicyProvider,
@@ -60,7 +62,7 @@ public sealed class CheckoutOrderUseCase
         _releaseCoordinator = releaseCoordinator;
     }
 
-    public async Task<Result<CheckoutOperationResult>> ExecuteAsync(
+    public async Task<Result<CheckoutOperationResult>> Handle(
         CheckoutOrderCommand command,
         CancellationToken cancellationToken)
     {

@@ -1,3 +1,4 @@
+using MediatR;
 using MarketplaceOrdering.Api.Contracts.Orders;
 using MarketplaceOrdering.Api.ErrorHandling;
 using MarketplaceOrdering.Application.Checkout.RetryPendingReservationReleases;
@@ -18,39 +19,11 @@ namespace MarketplaceOrdering.Api.Controllers;
 [Route("api/orders")]
 public sealed class OrdersController : ControllerBase
 {
-    private readonly CreateOrderUseCase _createOrder;
-    private readonly GetOrderDetailsUseCase _getOrder;
-    private readonly AddOrderItemUseCase _addItem;
-    private readonly ChangeOrderItemQuantityUseCase _changeQuantity;
-    private readonly RemoveOrderItemUseCase _removeItem;
-    private readonly ApplyDiscountCodeUseCase _applyDiscount;
-    private readonly RemoveDiscountCodeUseCase _removeDiscount;
-    private readonly CancelOrderUseCase _cancelOrder;
-    private readonly ExpireOrderUseCase _expireOrder;
-    private readonly RetryPendingReservationReleasesUseCase _retryReleases;
+    private readonly ISender _sender;
 
-    public OrdersController(
-        CreateOrderUseCase createOrder,
-        GetOrderDetailsUseCase getOrder,
-        AddOrderItemUseCase addItem,
-        ChangeOrderItemQuantityUseCase changeQuantity,
-        RemoveOrderItemUseCase removeItem,
-        ApplyDiscountCodeUseCase applyDiscount,
-        RemoveDiscountCodeUseCase removeDiscount,
-        CancelOrderUseCase cancelOrder,
-        ExpireOrderUseCase expireOrder,
-        RetryPendingReservationReleasesUseCase retryReleases)
+    public OrdersController(ISender sender)
     {
-        _createOrder = createOrder;
-        _getOrder = getOrder;
-        _addItem = addItem;
-        _changeQuantity = changeQuantity;
-        _removeItem = removeItem;
-        _applyDiscount = applyDiscount;
-        _removeDiscount = removeDiscount;
-        _cancelOrder = cancelOrder;
-        _expireOrder = expireOrder;
-        _retryReleases = retryReleases;
+        _sender = sender;
     }
 
     [HttpPost]
@@ -64,7 +37,7 @@ public sealed class OrdersController : ControllerBase
             request.DeliveryAddress,
             request.Items?.Select(item => new CreateOrderItemInput(
                 item.ProductId, item.ProductName, item.Quantity)).ToArray());
-        var result = await _createOrder.ExecuteAsync(
+        var result = await _sender.Send(
             command, HttpContext.RequestAborted);
         return result.IsFailure
             ? ResultHttpMapper.Failure(result.Error)
@@ -79,7 +52,7 @@ public sealed class OrdersController : ControllerBase
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(Guid orderId)
     {
-        var result = await _getOrder.ExecuteAsync(
+        var result = await _sender.Send(
             new GetOrderDetailsQuery(orderId),
             HttpContext.RequestAborted);
         return result.IsFailure
@@ -92,7 +65,7 @@ public sealed class OrdersController : ControllerBase
         Guid orderId,
         AddOrderItemRequest request)
     {
-        var result = await _addItem.ExecuteAsync(
+        var result = await _sender.Send(
             new AddOrderItemCommand(
                 orderId, request.ProductId,
                 request.ProductName, request.Quantity),
@@ -108,7 +81,7 @@ public sealed class OrdersController : ControllerBase
         Guid productId,
         ChangeOrderItemQuantityRequest request)
     {
-        var result = await _changeQuantity.ExecuteAsync(
+        var result = await _sender.Send(
             new ChangeOrderItemQuantityCommand(
                 orderId, productId, request.Quantity),
             HttpContext.RequestAborted);
@@ -122,7 +95,7 @@ public sealed class OrdersController : ControllerBase
         Guid orderId,
         Guid productId)
     {
-        var result = await _removeItem.ExecuteAsync(
+        var result = await _sender.Send(
             new RemoveOrderItemCommand(orderId, productId),
             HttpContext.RequestAborted);
         return result.IsFailure
@@ -135,7 +108,7 @@ public sealed class OrdersController : ControllerBase
         Guid orderId,
         ApplyDiscountCodeRequest request)
     {
-        var result = await _applyDiscount.ExecuteAsync(
+        var result = await _sender.Send(
             new ApplyDiscountCodeCommand(
                 orderId, request.DiscountCode),
             HttpContext.RequestAborted);
@@ -147,7 +120,7 @@ public sealed class OrdersController : ControllerBase
     [HttpDelete("{orderId:guid}/discount")]
     public async Task<IActionResult> RemoveDiscount(Guid orderId)
     {
-        var result = await _removeDiscount.ExecuteAsync(
+        var result = await _sender.Send(
             new RemoveDiscountCodeCommand(orderId),
             HttpContext.RequestAborted);
         return result.IsFailure
@@ -160,7 +133,7 @@ public sealed class OrdersController : ControllerBase
         Guid orderId,
         CancelOrderRequest request)
     {
-        var result = await _cancelOrder.ExecuteAsync(
+        var result = await _sender.Send(
             new CancelOrderCommand(orderId, request.Reason),
             HttpContext.RequestAborted);
         return result.IsFailure
@@ -171,7 +144,7 @@ public sealed class OrdersController : ControllerBase
     [HttpPost("{orderId:guid}/expire")]
     public async Task<IActionResult> Expire(Guid orderId)
     {
-        var result = await _expireOrder.ExecuteAsync(
+        var result = await _sender.Send(
             new ExpireOrderCommand(orderId),
             HttpContext.RequestAborted);
         return result.IsFailure
@@ -182,7 +155,7 @@ public sealed class OrdersController : ControllerBase
     [HttpPost("{orderId:guid}/reservation-releases/retry")]
     public async Task<IActionResult> RetryReservationReleases(Guid orderId)
     {
-        var result = await _retryReleases.ExecuteAsync(
+        var result = await _sender.Send(
             new RetryPendingReservationReleasesCommand(orderId),
             HttpContext.RequestAborted);
         return result.IsFailure

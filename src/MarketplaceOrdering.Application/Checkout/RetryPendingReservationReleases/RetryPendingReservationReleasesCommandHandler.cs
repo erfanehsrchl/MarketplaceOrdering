@@ -1,3 +1,4 @@
+using MediatR;
 using MarketplaceOrdering.Application.Checkout.Services;
 using MarketplaceOrdering.Application.Common.Abstractions.Persistence;
 using MarketplaceOrdering.Application.Common.Errors;
@@ -8,12 +9,13 @@ using MarketplaceOrdering.Domain.ValueObjects;
 
 namespace MarketplaceOrdering.Application.Checkout.RetryPendingReservationReleases;
 
-public sealed class RetryPendingReservationReleasesUseCase
+public sealed class RetryPendingReservationReleasesCommandHandler
+    : IRequestHandler<RetryPendingReservationReleasesCommand, Result<RetryPendingReservationReleasesResult>>
 {
     private readonly IOrderRepository _orderRepository;
     private readonly ReservationReleaseCoordinator _releaseCoordinator;
 
-    public RetryPendingReservationReleasesUseCase(
+    public RetryPendingReservationReleasesCommandHandler(
         IOrderRepository orderRepository,
         ReservationReleaseCoordinator releaseCoordinator)
     {
@@ -24,7 +26,7 @@ public sealed class RetryPendingReservationReleasesUseCase
     }
 
     public async Task<Result<RetryPendingReservationReleasesResult>>
-        ExecuteAsync(
+        Handle(
             RetryPendingReservationReleasesCommand command,
             CancellationToken cancellationToken)
     {

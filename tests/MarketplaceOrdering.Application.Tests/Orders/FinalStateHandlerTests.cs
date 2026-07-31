@@ -12,18 +12,18 @@ using MarketplaceOrdering.Domain.Shared;
 
 namespace MarketplaceOrdering.Application.Tests.Orders;
 
-public sealed class FinalStateUseCaseTests
+public sealed class FinalStateHandlerTests
 {
     [Fact]
     public async Task DraftCancellation_ShouldPersistWithoutRelease()
     {
-        var context = CheckoutUseCaseTestData.Create();
+        var context = CheckoutHandlerTestData.Create();
         using var cancellation = new CancellationTokenSource();
 
-        var result = await new CancelOrderUseCase(
+        var result = await new CancelOrderCommandHandler(
             context.Repository,
             context.Clock,
-            context.Coordinator).ExecuteAsync(
+            context.Coordinator).Handle(
                 new CancelOrderCommand(context.Order.Id.Value, "Customer request"),
                 cancellation.Token);
 
@@ -42,10 +42,10 @@ public sealed class FinalStateUseCaseTests
         var context = await AwaitingContext();
         context.Journal.Clear();
 
-        var result = await new CancelOrderUseCase(
+        var result = await new CancelOrderCommandHandler(
             context.Repository,
             context.Clock,
-            context.Coordinator).ExecuteAsync(
+            context.Coordinator).Handle(
                 new CancelOrderCommand(context.Order.Id.Value, "Cancel"),
                 CancellationToken.None);
 
@@ -72,10 +72,10 @@ public sealed class FinalStateUseCaseTests
             Result<InventoryReleaseOutcome>.Success(
                 new InventoryReleaseFailed("release.timeout"));
 
-        var result = await new CancelOrderUseCase(
+        var result = await new CancelOrderCommandHandler(
             context.Repository,
             context.Clock,
-            context.Coordinator).ExecuteAsync(
+            context.Coordinator).Handle(
                 new CancelOrderCommand(context.Order.Id.Value, "Cancel"),
                 CancellationToken.None);
 
@@ -93,10 +93,10 @@ public sealed class FinalStateUseCaseTests
         context.Clock.UtcNow = context.Order.PaymentExpiresAt!.Value;
         context.Journal.Clear();
 
-        var result = await new ExpireOrderUseCase(
+        var result = await new ExpireOrderCommandHandler(
             context.Repository,
             context.Clock,
-            context.Coordinator).ExecuteAsync(
+            context.Coordinator).Handle(
                 new ExpireOrderCommand(context.Order.Id.Value),
                 CancellationToken.None);
 
@@ -117,10 +117,10 @@ public sealed class FinalStateUseCaseTests
             context.Order.PaymentExpiresAt!.Value.AddTicks(-1);
         var savesBefore = context.Repository.SaveCalls;
 
-        var result = await new ExpireOrderUseCase(
+        var result = await new ExpireOrderCommandHandler(
             context.Repository,
             context.Clock,
-            context.Coordinator).ExecuteAsync(
+            context.Coordinator).Handle(
                 new ExpireOrderCommand(context.Order.Id.Value),
                 CancellationToken.None);
 
@@ -138,10 +138,10 @@ public sealed class FinalStateUseCaseTests
         context.Inventory.ReleaseResults[vendor] =
             Result<InventoryReleaseOutcome>.Success(
                 new InventoryReleaseFailed("release.timeout"));
-        var cancelled = await new CancelOrderUseCase(
+        var cancelled = await new CancelOrderCommandHandler(
             context.Repository,
             context.Clock,
-            context.Coordinator).ExecuteAsync(
+            context.Coordinator).Handle(
                 new CancelOrderCommand(context.Order.Id.Value, "Cancel"),
                 CancellationToken.None);
         context.Repository.LoadedOrder = new VersionedOrder(
@@ -150,9 +150,9 @@ public sealed class FinalStateUseCaseTests
             Result<InventoryReleaseOutcome>.Success(
                 new InventoryReleaseSucceeded());
 
-        var retried = await new RetryPendingReservationReleasesUseCase(
+        var retried = await new RetryPendingReservationReleasesCommandHandler(
             context.Repository,
-            context.Coordinator).ExecuteAsync(
+            context.Coordinator).Handle(
                 new RetryPendingReservationReleasesCommand(
                     context.Order.Id.Value),
                 CancellationToken.None);
@@ -164,9 +164,9 @@ public sealed class FinalStateUseCaseTests
 
     private static async Task<CheckoutTestContext> AwaitingContext()
     {
-        var context = CheckoutUseCaseTestData.Create();
-        var checkout = await context.UseCase.ExecuteAsync(
-            CheckoutUseCaseTestData.Command(context.Order),
+        var context = CheckoutHandlerTestData.Create();
+        var checkout = await context.Handler.Handle(
+            CheckoutHandlerTestData.Command(context.Order),
             CancellationToken.None);
         context.Repository.LoadedOrder = new VersionedOrder(
             context.Order, checkout.Value.Version);

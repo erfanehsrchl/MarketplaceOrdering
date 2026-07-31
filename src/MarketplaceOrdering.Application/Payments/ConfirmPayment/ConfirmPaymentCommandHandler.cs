@@ -1,3 +1,4 @@
+using MediatR;
 using MarketplaceOrdering.Application.Common.Abstractions.Persistence;
 using MarketplaceOrdering.Application.Common.Errors;
 using MarketplaceOrdering.Domain.Money;
@@ -6,17 +7,18 @@ using MarketplaceOrdering.Domain.ValueObjects;
 
 namespace MarketplaceOrdering.Application.Payments.ConfirmPayment;
 
-public sealed class ConfirmPaymentUseCase
+public sealed class ConfirmPaymentCommandHandler
+    : IRequestHandler<ConfirmPaymentCommand, Result<ConfirmPaymentResult>>
 {
     private readonly IOrderRepository _orderRepository;
 
-    public ConfirmPaymentUseCase(IOrderRepository orderRepository)
+    public ConfirmPaymentCommandHandler(IOrderRepository orderRepository)
     {
         ArgumentNullException.ThrowIfNull(orderRepository);
         _orderRepository = orderRepository;
     }
 
-    public async Task<Result<ConfirmPaymentResult>> ExecuteAsync(
+    public async Task<Result<ConfirmPaymentResult>> Handle(
         ConfirmPaymentCommand command,
         CancellationToken cancellationToken)
     {

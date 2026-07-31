@@ -8,7 +8,7 @@ using MarketplaceOrdering.Domain.ValueObjects;
 
 namespace MarketplaceOrdering.Application.Tests.Payments;
 
-public sealed class ConfirmPaymentUseCaseTests
+public sealed class ConfirmPaymentCommandHandlerTests
 {
     [Fact]
     public async Task ValidPayment_ShouldUseAtomicPaymentSave()
@@ -18,8 +18,8 @@ public sealed class ConfirmPaymentUseCaseTests
         var paidAt = context.Order.PaymentExpiresAt!.Value.AddSeconds(-1);
         using var cancellation = new CancellationTokenSource();
 
-        var result = await new ConfirmPaymentUseCase(context.Repository)
-            .ExecuteAsync(
+        var result = await new ConfirmPaymentCommandHandler(context.Repository)
+            .Handle(
                 new ConfirmPaymentCommand(
                     context.Order.Id.Value,
                     transactionId,
@@ -47,8 +47,8 @@ public sealed class ConfirmPaymentUseCaseTests
     {
         var context = await AwaitingContext();
 
-        var result = await new ConfirmPaymentUseCase(context.Repository)
-            .ExecuteAsync(
+        var result = await new ConfirmPaymentCommandHandler(context.Repository)
+            .Handle(
                 new ConfirmPaymentCommand(
                     context.Order.Id.Value,
                     "transaction",
@@ -69,8 +69,8 @@ public sealed class ConfirmPaymentUseCaseTests
         context.Repository.ClaimedTransactionIds[transactionId.Value] =
             OrderId.New();
 
-        var result = await new ConfirmPaymentUseCase(context.Repository)
-            .ExecuteAsync(
+        var result = await new ConfirmPaymentCommandHandler(context.Repository)
+            .Handle(
                 new ConfirmPaymentCommand(
                     context.Order.Id.Value,
                     transactionId.Value,
@@ -92,8 +92,8 @@ public sealed class ConfirmPaymentUseCaseTests
             ApplicationErrors.OrderVersionConflict;
         var eventCount = context.Order.DomainEvents.Count;
 
-        var result = await new ConfirmPaymentUseCase(context.Repository)
-            .ExecuteAsync(
+        var result = await new ConfirmPaymentCommandHandler(context.Repository)
+            .Handle(
                 new ConfirmPaymentCommand(
                     context.Order.Id.Value,
                     "transaction",
@@ -109,10 +109,10 @@ public sealed class ConfirmPaymentUseCaseTests
 
     private static async Task<CheckoutTestContext> AwaitingContext()
     {
-        var context = CheckoutUseCaseTestData.Create();
+        var context = CheckoutHandlerTestData.Create();
         context.Repository.EnforceVersionChecks = true;
-        var checkout = await context.UseCase.ExecuteAsync(
-            CheckoutUseCaseTestData.Command(context.Order),
+        var checkout = await context.Handler.Handle(
+            CheckoutHandlerTestData.Command(context.Order),
             CancellationToken.None);
         context.Repository.LoadedOrder = new VersionedOrder(
             context.Order, checkout.Value.Version);

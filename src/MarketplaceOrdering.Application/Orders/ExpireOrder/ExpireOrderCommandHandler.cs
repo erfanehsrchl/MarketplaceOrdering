@@ -1,3 +1,4 @@
+using MediatR;
 using MarketplaceOrdering.Application.Checkout.Services;
 using MarketplaceOrdering.Application.Common.Abstractions.Persistence;
 using MarketplaceOrdering.Application.Common.Abstractions.Time;
@@ -8,13 +9,14 @@ using MarketplaceOrdering.Domain.ValueObjects;
 
 namespace MarketplaceOrdering.Application.Orders.ExpireOrder;
 
-public sealed class ExpireOrderUseCase
+public sealed class ExpireOrderCommandHandler
+    : IRequestHandler<ExpireOrderCommand, Result<ExpireOrderResult>>
 {
     private readonly IOrderRepository _orderRepository;
     private readonly IClock _clock;
     private readonly ReservationReleaseCoordinator _releaseCoordinator;
 
-    public ExpireOrderUseCase(
+    public ExpireOrderCommandHandler(
         IOrderRepository orderRepository,
         IClock clock,
         ReservationReleaseCoordinator releaseCoordinator)
@@ -27,7 +29,7 @@ public sealed class ExpireOrderUseCase
         _releaseCoordinator = releaseCoordinator;
     }
 
-    public async Task<Result<ExpireOrderResult>> ExecuteAsync(
+    public async Task<Result<ExpireOrderResult>> Handle(
         ExpireOrderCommand command,
         CancellationToken cancellationToken)
     {

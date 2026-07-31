@@ -1,3 +1,4 @@
+using MediatR;
 using FluentAssertions;
 using MarketplaceOrdering.Application;
 using MarketplaceOrdering.Application.Checkout.CheckoutOrder;
@@ -38,21 +39,21 @@ namespace MarketplaceOrdering.Api.Tests.DependencyInjection;
 
 public sealed class DependencyInjectionRegistrationTests
 {
-    private static readonly Type[] UseCaseTypes =
+    private static readonly Type[] HandlerTypes =
     [
-        typeof(CreateOrderUseCase),
-        typeof(AddOrderItemUseCase),
-        typeof(ChangeOrderItemQuantityUseCase),
-        typeof(RemoveOrderItemUseCase),
-        typeof(ApplyDiscountCodeUseCase),
-        typeof(RemoveDiscountCodeUseCase),
-        typeof(GetOrderDetailsUseCase),
-        typeof(CheckoutOrderUseCase),
-        typeof(ConfirmPaymentUseCase),
-        typeof(CancelOrderUseCase),
-        typeof(ExpireOrderUseCase),
-        typeof(RetryPendingReservationReleasesUseCase),
-        typeof(RecoverOrphanReservationsUseCase)
+        typeof(CreateOrderCommandHandler),
+        typeof(AddOrderItemCommandHandler),
+        typeof(ChangeOrderItemQuantityCommandHandler),
+        typeof(RemoveOrderItemCommandHandler),
+        typeof(ApplyDiscountCodeCommandHandler),
+        typeof(RemoveDiscountCodeCommandHandler),
+        typeof(GetOrderDetailsQueryHandler),
+        typeof(CheckoutOrderCommandHandler),
+        typeof(ConfirmPaymentCommandHandler),
+        typeof(CancelOrderCommandHandler),
+        typeof(ExpireOrderCommandHandler),
+        typeof(RetryPendingReservationReleasesCommandHandler),
+        typeof(RecoverOrphanReservationsCommandHandler)
     ];
 
     [Fact]
@@ -70,9 +71,12 @@ public sealed class DependencyInjectionRegistrationTests
             });
         using var scope = provider.CreateScope();
 
-        foreach (var useCaseType in UseCaseTypes)
-            scope.ServiceProvider.GetRequiredService(useCaseType)
+        foreach (var handlerType in HandlerTypes)
+            scope.ServiceProvider.GetRequiredService(
+                    HandlerContract(handlerType))
                 .Should().NotBeNull();
+        scope.ServiceProvider.GetRequiredService<ISender>()
+            .Should().NotBeNull();
         scope.ServiceProvider
             .GetRequiredService<ReservationReleaseCoordinator>()
             .Should().NotBeNull();
@@ -116,10 +120,16 @@ public sealed class DependencyInjectionRegistrationTests
         services.AddApplication();
         services.AddInfrastructure();
 
-        foreach (var useCaseType in UseCaseTypes)
+        foreach (var handlerType in HandlerTypes)
             services.Single(descriptor =>
-                    descriptor.ServiceType == useCaseType)
-                .Lifetime.Should().Be(ServiceLifetime.Scoped);
+                    descriptor.ImplementationType == handlerType)
+                .Lifetime.Should().Be(ServiceLifetime.Transient);
+        services.Should().NotContain(descriptor =>
+            descriptor.ServiceType.Name.EndsWith(
+                "UseCase", StringComparison.Ordinal)
+            || (descriptor.ImplementationType != null
+                && descriptor.ImplementationType.Name.EndsWith(
+                    "UseCase", StringComparison.Ordinal)));
         services.Single(descriptor => descriptor.ServiceType ==
                 typeof(ReservationReleaseCoordinator))
             .Lifetime.Should().Be(ServiceLifetime.Scoped);
@@ -150,12 +160,12 @@ public sealed class DependencyInjectionRegistrationTests
     {
         ((object)typeof(MarketplaceOrdering.Application.DependencyInjection)
                 .Assembly)
-            .Should().BeSameAs(typeof(CreateOrderUseCase).Assembly);
+            .Should().BeSameAs(typeof(CreateOrderCommandHandler).Assembly);
         ((object)typeof(MarketplaceOrdering.Infrastructure.DependencyInjection)
                 .Assembly)
             .Should().BeSameAs(typeof(InMemoryOrderRepository).Assembly);
 
-        ReferencedProjects(typeof(CreateOrderUseCase))
+        ReferencedProjects(typeof(CreateOrderCommandHandler))
             .Should().NotContain([
                 "MarketplaceOrdering.Infrastructure",
                 "MarketplaceOrdering.Api"
@@ -176,6 +186,122 @@ public sealed class DependencyInjectionRegistrationTests
             "MarketplaceOrdering.Infrastructure",
             "MarketplaceOrdering.Api"
         ]);
+        domainReferences.Should().NotContain("MediatR");
+        typeof(InMemoryOrderRepository).Assembly.GetTypes()
+            .Should().NotContain(type => type.Name.EndsWith(
+                "CommandHandler", StringComparison.Ordinal)
+                || type.Name.EndsWith(
+                    "QueryHandler", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void EveryCommandAndQueryHasExactlyOneResolvableHandler()
+    {
+        var services = new ServiceCollection();
+        services.AddApplication();
+        services.AddInfrastructure();
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions
+            {
+                ValidateOnBuild = true,
+                ValidateScopes = true
+            });
+        using var scope = provider.CreateScope();
+
+        var requests = typeof(CreateOrderCommandHandler).Assembly.GetTypes()
+            .Where(type => !type.IsAbstract
+                && type.GetInterfaces().Any(contract =>
+                    contract.IsGenericType
+                    && contract.GetGenericTypeDefinition()
+                        == typeof(IRequest<>)))
+            .ToArray();
+
+        requests.Where(type => type.Name.EndsWith(
+                "Command", StringComparison.Ordinal))
+            .Should().HaveCount(12);
+        requests.Where(type => type.Name.EndsWith(
+                "Query", StringComparison.Ordinal))
+            .Should().ContainSingle()
+            .Which.Should().Be(typeof(GetOrderDetailsQuery));
+
+        foreach (var request in requests)
+        {
+            var response = request.GetInterfaces().Single(contract =>
+                    contract.IsGenericType
+                    && contract.GetGenericTypeDefinition()
+                        == typeof(IRequest<>))
+                .GetGenericArguments()[0];
+            var contract = typeof(IRequestHandler<,>)
+                .MakeGenericType(request, response);
+            services.Count(descriptor =>
+                    descriptor.ServiceType == contract)
+                .Should().Be(1);
+            scope.ServiceProvider.GetRequiredService(contract)
+                .Should().NotBeNull();
+        }
+    }
+
+    [Fact]
+    public async Task SenderPassesTheCallerCancellationTokenToTheHandler()
+    {
+        var services = new ServiceCollection();
+        services.AddApplication();
+        services.AddTransient<
+            IRequestHandler<CancellationProbeRequest, CancellationToken>,
+            CancellationProbeHandler>();
+        using var provider = services.BuildServiceProvider();
+        using var scope = provider.CreateScope();
+        using var cancellation = new CancellationTokenSource();
+
+        var observed = await scope.ServiceProvider
+            .GetRequiredService<ISender>()
+            .Send(
+                new CancellationProbeRequest(),
+                cancellation.Token);
+
+        observed.Should().Be(cancellation.Token);
+    }
+
+    [Fact]
+    public async Task SenderDispatchesEveryApplicationCommandAndQuery()
+    {
+        var services = new ServiceCollection();
+        services.AddApplication();
+        services.AddInfrastructure();
+        using var provider = services.BuildServiceProvider(
+            new ServiceProviderOptions
+            {
+                ValidateOnBuild = true,
+                ValidateScopes = true
+            });
+        using var scope = provider.CreateScope();
+        var sender = scope.ServiceProvider.GetRequiredService<ISender>();
+        object[] requests =
+        [
+            new CreateOrderCommand(Guid.Empty, string.Empty, null),
+            new AddOrderItemCommand(
+                Guid.Empty, Guid.Empty, string.Empty, 0),
+            new ChangeOrderItemQuantityCommand(
+                Guid.Empty, Guid.Empty, 0),
+            new RemoveOrderItemCommand(Guid.Empty, Guid.Empty),
+            new ApplyDiscountCodeCommand(Guid.Empty, string.Empty),
+            new RemoveDiscountCodeCommand(Guid.Empty),
+            new CheckoutOrderCommand(Guid.Empty, string.Empty),
+            new ConfirmPaymentCommand(
+                Guid.Empty, string.Empty, 0, default),
+            new CancelOrderCommand(Guid.Empty, string.Empty),
+            new ExpireOrderCommand(Guid.Empty),
+            new RetryPendingReservationReleasesCommand(Guid.Empty),
+            new RecoverOrphanReservationsCommand(0),
+            new GetOrderDetailsQuery(Guid.Empty)
+        ];
+
+        foreach (var request in requests)
+        {
+            var result = await sender.Send(
+                request, default);
+            result.Should().NotBeNull();
+        }
     }
 
     private static void AssertShared<TPort, TAdapter>(
@@ -195,4 +321,22 @@ public sealed class DependencyInjectionRegistrationTests
                 StringComparison.Ordinal) == true)
             .Select(reference => reference.Name)
             .ToArray();
+
+    private static Type HandlerContract(Type handlerType) =>
+        handlerType.GetInterfaces().Single(contract =>
+            contract.IsGenericType
+            && contract.GetGenericTypeDefinition()
+                == typeof(IRequestHandler<,>));
+
+    public sealed record CancellationProbeRequest
+        : IRequest<CancellationToken>;
+
+    public sealed class CancellationProbeHandler
+        : IRequestHandler<CancellationProbeRequest, CancellationToken>
+    {
+        public Task<CancellationToken> Handle(
+            CancellationProbeRequest request,
+            CancellationToken cancellationToken) =>
+            Task.FromResult(cancellationToken);
+    }
 }

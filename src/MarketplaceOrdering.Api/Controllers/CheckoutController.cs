@@ -1,3 +1,4 @@
+using MediatR;
 using MarketplaceOrdering.Api.ErrorHandling;
 using MarketplaceOrdering.Application.Checkout.CheckoutOrder;
 using Microsoft.AspNetCore.Mvc;
@@ -8,11 +9,11 @@ namespace MarketplaceOrdering.Api.Controllers;
 [Route("api/orders/{orderId:guid}/checkout")]
 public sealed class CheckoutController : ControllerBase
 {
-    private readonly CheckoutOrderUseCase _checkout;
+    private readonly ISender _sender;
 
-    public CheckoutController(CheckoutOrderUseCase checkout)
+    public CheckoutController(ISender sender)
     {
-        _checkout = checkout;
+        _sender = sender;
     }
 
     [HttpPost]
@@ -25,7 +26,7 @@ public sealed class CheckoutController : ControllerBase
         Guid orderId,
         [FromHeader(Name = "Idempotency-Key")] string? idempotencyKey)
     {
-        var result = await _checkout.ExecuteAsync(
+        var result = await _sender.Send(
             new CheckoutOrderCommand(
                 orderId, idempotencyKey ?? string.Empty),
             HttpContext.RequestAborted);

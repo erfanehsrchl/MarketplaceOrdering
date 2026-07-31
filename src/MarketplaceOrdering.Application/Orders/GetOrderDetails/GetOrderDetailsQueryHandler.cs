@@ -1,3 +1,4 @@
+using MediatR;
 using MarketplaceOrdering.Application.Common.Abstractions.Persistence;
 using MarketplaceOrdering.Application.Common.Errors;
 using MarketplaceOrdering.Application.Orders.Mapping;
@@ -7,17 +8,18 @@ using MarketplaceOrdering.Domain.ValueObjects;
 
 namespace MarketplaceOrdering.Application.Orders.GetOrderDetails;
 
-public sealed class GetOrderDetailsUseCase
+public sealed class GetOrderDetailsQueryHandler
+    : IRequestHandler<GetOrderDetailsQuery, Result<OrderDetails>>
 {
     private readonly IOrderRepository _repository;
 
-    public GetOrderDetailsUseCase(IOrderRepository repository)
+    public GetOrderDetailsQueryHandler(IOrderRepository repository)
     {
         ArgumentNullException.ThrowIfNull(repository);
         _repository = repository;
     }
 
-    public async Task<Result<OrderDetails>> ExecuteAsync(
+    public async Task<Result<OrderDetails>> Handle(
         GetOrderDetailsQuery query,
         CancellationToken cancellationToken)
     {

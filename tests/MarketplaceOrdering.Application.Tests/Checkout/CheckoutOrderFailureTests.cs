@@ -11,14 +11,14 @@ public sealed class CheckoutOrderFailureTests
     [Fact]
     public async Task OfferFailure_ShouldReturnOrderToDraftAndStoreOriginalError()
     {
-        var context = CheckoutUseCaseTestData.Create();
+        var context = CheckoutHandlerTestData.Create();
         var originalItems = context.Order.Items.ToArray();
         var error = Error.DependencyFailure(
             "offers.unavailable", "Offers unavailable.");
         context.Offers.Failure = error;
 
-        var result = await context.UseCase.ExecuteAsync(
-            CheckoutUseCaseTestData.Command(context.Order),
+        var result = await context.Handler.Handle(
+            CheckoutHandlerTestData.Command(context.Order),
             CancellationToken.None);
 
         result.Error.Should().Be(error);
@@ -34,11 +34,11 @@ public sealed class CheckoutOrderFailureTests
     [Fact]
     public async Task PlanningFailure_ShouldPreserveExactErrorAndAvoidInventory()
     {
-        var context = CheckoutUseCaseTestData.Create();
+        var context = CheckoutHandlerTestData.Create();
         context.Offers.Offers = [];
 
-        var result = await context.UseCase.ExecuteAsync(
-            CheckoutUseCaseTestData.Command(context.Order),
+        var result = await context.Handler.Handle(
+            CheckoutHandlerTestData.Command(context.Order),
             CancellationToken.None);
 
         result.Error.Code.Should().Be("fulfillment.no_valid_plan");
@@ -52,7 +52,7 @@ public sealed class CheckoutOrderFailureTests
     [Fact]
     public async Task DiscountFailure_ShouldPreserveSelectionAndError()
     {
-        var context = CheckoutUseCaseTestData.Create();
+        var context = CheckoutHandlerTestData.Create();
         var code = MarketplaceOrdering.Domain.ValueObjects.DiscountCode
             .Create("SAVE").Value;
         context.Order.SelectDiscountCode(code, context.Clock.UtcNow);
@@ -60,8 +60,8 @@ public sealed class CheckoutOrderFailureTests
             "discount.policy_missing", "Policy missing.");
         context.Discounts.Failure = error;
 
-        var result = await context.UseCase.ExecuteAsync(
-            CheckoutUseCaseTestData.Command(context.Order),
+        var result = await context.Handler.Handle(
+            CheckoutHandlerTestData.Command(context.Order),
             CancellationToken.None);
 
         result.Error.Should().Be(error);
@@ -72,21 +72,21 @@ public sealed class CheckoutOrderFailureTests
     [Fact]
     public async Task SecondVendorRejection_ShouldReleaseFirstAndStop()
     {
-        var context = CheckoutUseCaseTestData.Create(2);
-        var rejectedVendor = CheckoutUseCaseTestData.Vendor(2);
+        var context = CheckoutHandlerTestData.Create(2);
+        var rejectedVendor = CheckoutHandlerTestData.Vendor(2);
         context.Inventory.ReservationResults[rejectedVendor] =
             Result<InventoryReservationOutcome>.Success(
                 new InventoryReservationRejected(
                     "reservation.insufficient_inventory"));
 
-        var result = await context.UseCase.ExecuteAsync(
-            CheckoutUseCaseTestData.Command(context.Order),
+        var result = await context.Handler.Handle(
+            CheckoutHandlerTestData.Command(context.Order),
             CancellationToken.None);
 
         result.Error.Code.Should().Be("reservation.insufficient_inventory");
         context.Inventory.ReservationRequests.Should().HaveCount(2);
         context.Inventory.ReleaseRequests.Should().ContainSingle()
-            .Which.VendorId.Should().Be(CheckoutUseCaseTestData.Vendor(1));
+            .Which.VendorId.Should().Be(CheckoutHandlerTestData.Vendor(1));
         context.Order.Status.Should().Be(
             MarketplaceOrdering.Domain.Orders.OrderStatus.Draft);
         context.Order.CheckoutAttempt!.Status.Should()
@@ -98,18 +98,18 @@ public sealed class CheckoutOrderFailureTests
     [Fact]
     public async Task ReleaseFailure_ShouldProduceCompensationPending()
     {
-        var context = CheckoutUseCaseTestData.Create(2);
-        var firstVendor = CheckoutUseCaseTestData.Vendor(1);
+        var context = CheckoutHandlerTestData.Create(2);
+        var firstVendor = CheckoutHandlerTestData.Vendor(1);
         context.Inventory.ReservationResults[
-            CheckoutUseCaseTestData.Vendor(2)] =
+            CheckoutHandlerTestData.Vendor(2)] =
             Result<InventoryReservationOutcome>.Success(
                 new InventoryReservationRejected("reservation.rejected"));
         context.Inventory.ReleaseResults[firstVendor] =
             Result<InventoryReleaseOutcome>.Success(
                 new InventoryReleaseFailed("release.timeout"));
 
-        var result = await context.UseCase.ExecuteAsync(
-            CheckoutUseCaseTestData.Command(context.Order),
+        var result = await context.Handler.Handle(
+            CheckoutHandlerTestData.Command(context.Order),
             CancellationToken.None);
 
         result.Error.Code.Should().Be("reservation.rejected");
@@ -127,21 +127,21 @@ public sealed class CheckoutOrderFailureTests
     [Fact]
     public async Task ThirdVendorRejection_ShouldReleasePreviousVendorsInReverseOrder()
     {
-        var context = CheckoutUseCaseTestData.Create(3);
+        var context = CheckoutHandlerTestData.Create(3);
         context.Inventory.ReservationResults[
-            CheckoutUseCaseTestData.Vendor(3)] =
+            CheckoutHandlerTestData.Vendor(3)] =
             Result<InventoryReservationOutcome>.Success(
                 new InventoryReservationRejected("reservation.rejected"));
 
-        await context.UseCase.ExecuteAsync(
-            CheckoutUseCaseTestData.Command(context.Order),
+        await context.Handler.Handle(
+            CheckoutHandlerTestData.Command(context.Order),
             CancellationToken.None);
 
         context.Inventory.ReservationRequests.Should().HaveCount(3);
         context.Inventory.ReleaseRequests.Select(request => request.VendorId)
             .Should().Equal(
-                CheckoutUseCaseTestData.Vendor(2),
-                CheckoutUseCaseTestData.Vendor(1));
+                CheckoutHandlerTestData.Vendor(2),
+                CheckoutHandlerTestData.Vendor(1));
     }
 
     [Theory]
@@ -150,16 +150,16 @@ public sealed class CheckoutOrderFailureTests
     public async Task UnknownReservationOutcome_ShouldRemainProcessing(
         bool portFailure)
     {
-        var context = CheckoutUseCaseTestData.Create(2);
-        var firstVendor = CheckoutUseCaseTestData.Vendor(1);
+        var context = CheckoutHandlerTestData.Create(2);
+        var firstVendor = CheckoutHandlerTestData.Vendor(1);
         context.Inventory.ReservationResults[firstVendor] = portFailure
             ? Result<InventoryReservationOutcome>.Failure(
                 ApplicationErrors.DependencyOperationIndeterminate)
             : Result<InventoryReservationOutcome>.Success(
                 new InventoryReservationIndeterminate("inventory.timeout"));
 
-        var result = await context.UseCase.ExecuteAsync(
-            CheckoutUseCaseTestData.Command(context.Order),
+        var result = await context.Handler.Handle(
+            CheckoutHandlerTestData.Command(context.Order),
             CancellationToken.None);
 
         result.Error.Code.Should()

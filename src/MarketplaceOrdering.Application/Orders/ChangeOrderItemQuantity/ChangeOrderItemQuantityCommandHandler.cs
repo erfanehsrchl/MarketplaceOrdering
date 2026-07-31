@@ -1,3 +1,4 @@
+using MediatR;
 using MarketplaceOrdering.Application.Common.Abstractions.Persistence;
 using MarketplaceOrdering.Application.Common.Abstractions.Time;
 using MarketplaceOrdering.Application.Common.Errors;
@@ -6,14 +7,15 @@ using MarketplaceOrdering.Application.Orders.Models;
 using MarketplaceOrdering.Domain.Shared;
 using MarketplaceOrdering.Domain.ValueObjects;
 
-namespace MarketplaceOrdering.Application.Orders.ApplyDiscountCode;
+namespace MarketplaceOrdering.Application.Orders.ChangeOrderItemQuantity;
 
-public sealed class ApplyDiscountCodeUseCase
+public sealed class ChangeOrderItemQuantityCommandHandler
+    : IRequestHandler<ChangeOrderItemQuantityCommand, Result<OrderDetails>>
 {
     private readonly IOrderRepository _repository;
     private readonly IClock _clock;
 
-    public ApplyDiscountCodeUseCase(IOrderRepository repository, IClock clock)
+    public ChangeOrderItemQuantityCommandHandler(IOrderRepository repository, IClock clock)
     {
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(clock);
@@ -21,20 +23,22 @@ public sealed class ApplyDiscountCodeUseCase
         _clock = clock;
     }
 
-    public async Task<Result<OrderDetails>> ExecuteAsync(
-        ApplyDiscountCodeCommand command,
+    public async Task<Result<OrderDetails>> Handle(
+        ChangeOrderItemQuantityCommand command,
         CancellationToken cancellationToken)
     {
         if (command is null)
             return Result<OrderDetails>.Failure(ApplicationErrors.InvalidRequest);
         var orderId = OrderId.Create(command.OrderId);
         if (orderId.IsFailure) return Result<OrderDetails>.Failure(orderId.Error);
-        var code = DiscountCode.Create(command.DiscountCode);
-        if (code.IsFailure) return Result<OrderDetails>.Failure(code.Error);
+        var productId = ProductId.Create(command.ProductId);
+        if (productId.IsFailure) return Result<OrderDetails>.Failure(productId.Error);
+        var quantity = Quantity.Create(command.Quantity);
+        if (quantity.IsFailure) return Result<OrderDetails>.Failure(quantity.Error);
         var loaded = await _repository.LoadAsync(orderId.Value, cancellationToken);
         if (loaded.IsFailure) return Result<OrderDetails>.Failure(loaded.Error);
-        var changed = loaded.Value.Order.SelectDiscountCode(
-            code.Value, _clock.UtcNow);
+        var changed = loaded.Value.Order.ChangeItemQuantity(
+            productId.Value, quantity.Value, _clock.UtcNow);
         if (changed.IsFailure) return Result<OrderDetails>.Failure(changed.Error);
         var saved = await _repository.SaveAsync(
             loaded.Value.Order, loaded.Value.Version, cancellationToken);

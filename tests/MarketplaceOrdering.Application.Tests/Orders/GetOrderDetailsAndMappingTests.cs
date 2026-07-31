@@ -27,8 +27,8 @@ public sealed class GetOrderDetailsAndMappingTests
         };
         using var cancellation = new CancellationTokenSource();
 
-        var result = await new GetOrderDetailsUseCase(repository)
-            .ExecuteAsync(
+        var result = await new GetOrderDetailsQueryHandler(repository)
+            .Handle(
                 new GetOrderDetailsQuery(order.Id.Value),
                 cancellation.Token);
 
@@ -47,8 +47,8 @@ public sealed class GetOrderDetailsAndMappingTests
     {
         var repository = new FakeOrderRepository();
 
-        var result = await new GetOrderDetailsUseCase(repository)
-            .ExecuteAsync(
+        var result = await new GetOrderDetailsQueryHandler(repository)
+            .Handle(
                 new GetOrderDetailsQuery(Guid.NewGuid()),
                 CancellationToken.None);
 

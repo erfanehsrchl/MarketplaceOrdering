@@ -1,3 +1,4 @@
+using MediatR;
 using MarketplaceOrdering.Application.Checkout.Services;
 using MarketplaceOrdering.Application.Common.Abstractions.Persistence;
 using MarketplaceOrdering.Application.Common.Abstractions.Time;
@@ -8,13 +9,14 @@ using MarketplaceOrdering.Domain.ValueObjects;
 
 namespace MarketplaceOrdering.Application.Orders.CancelOrder;
 
-public sealed class CancelOrderUseCase
+public sealed class CancelOrderCommandHandler
+    : IRequestHandler<CancelOrderCommand, Result<CancelOrderResult>>
 {
     private readonly IOrderRepository _orderRepository;
     private readonly IClock _clock;
     private readonly ReservationReleaseCoordinator _releaseCoordinator;
 
-    public CancelOrderUseCase(
+    public CancelOrderCommandHandler(
         IOrderRepository orderRepository,
         IClock clock,
         ReservationReleaseCoordinator releaseCoordinator)
@@ -27,7 +29,7 @@ public sealed class CancelOrderUseCase
         _releaseCoordinator = releaseCoordinator;
     }
 
-    public async Task<Result<CancelOrderResult>> ExecuteAsync(
+    public async Task<Result<CancelOrderResult>> Handle(
         CancelOrderCommand command,
         CancellationToken cancellationToken)
     {

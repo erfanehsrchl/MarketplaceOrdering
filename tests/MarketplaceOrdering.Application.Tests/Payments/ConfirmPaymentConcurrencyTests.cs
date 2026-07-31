@@ -85,7 +85,7 @@ public sealed class ConfirmPaymentConcurrencyTests
             DeliveryAddress.Create("Address").Value,
             [new InitialOrderItem(product, Quantity.Create(1).Value)],
             new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero)).Value;
-        var vendor = CheckoutUseCaseTestData.Vendor(1);
+        var vendor = CheckoutHandlerTestData.Vendor(1);
         var offer = ProductOffer.Create(
             vendor,
             product.ProductId,

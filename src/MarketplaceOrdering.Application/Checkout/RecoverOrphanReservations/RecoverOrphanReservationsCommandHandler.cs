@@ -1,3 +1,4 @@
+using MediatR;
 using MarketplaceOrdering.Application.Common.Abstractions.Inventory;
 using MarketplaceOrdering.Application.Common.Abstractions.Recovery;
 using MarketplaceOrdering.Application.Common.Abstractions.Time;
@@ -6,13 +7,14 @@ using MarketplaceOrdering.Domain.Shared;
 
 namespace MarketplaceOrdering.Application.Checkout.RecoverOrphanReservations;
 
-public sealed class RecoverOrphanReservationsUseCase
+public sealed class RecoverOrphanReservationsCommandHandler
+    : IRequestHandler<RecoverOrphanReservationsCommand, Result<RecoverOrphanReservationsResult>>
 {
     private readonly IReservationRecoveryStore _recoveryStore;
     private readonly IInventoryReservationService _inventoryService;
     private readonly IClock _clock;
 
-    public RecoverOrphanReservationsUseCase(
+    public RecoverOrphanReservationsCommandHandler(
         IReservationRecoveryStore recoveryStore,
         IInventoryReservationService inventoryReservationService,
         IClock clock)
@@ -25,7 +27,7 @@ public sealed class RecoverOrphanReservationsUseCase
         _clock = clock;
     }
 
-    public async Task<Result<RecoverOrphanReservationsResult>> ExecuteAsync(
+    public async Task<Result<RecoverOrphanReservationsResult>> Handle(
         RecoverOrphanReservationsCommand command,
         CancellationToken cancellationToken)
     {

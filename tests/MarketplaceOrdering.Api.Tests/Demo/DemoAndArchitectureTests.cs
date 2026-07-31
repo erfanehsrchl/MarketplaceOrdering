@@ -1,3 +1,4 @@
+using MediatR;
 using System.Net;
 using System.Net.Http.Json;
 using System.Reflection;
@@ -79,7 +80,7 @@ public sealed class DemoAndArchitectureTests
     }
 
     [Fact]
-    public void ControllersAreSealedTransportAdaptersWithoutRepositories()
+    public void ControllersAreSealedSenderBasedTransportAdapters()
     {
         Type[] controllers =
         [
@@ -91,10 +92,23 @@ public sealed class DemoAndArchitectureTests
 
         controllers.Should().OnlyContain(type =>
             type.IsSealed && type.IsSubclassOf(typeof(ControllerBase)));
-        controllers.SelectMany(type => type.GetConstructors())
+        var dependencies = controllers
+            .SelectMany(type => type.GetConstructors())
             .SelectMany(constructor => constructor.GetParameters())
             .Select(parameter => parameter.ParameterType)
-            .Should().NotContain(typeof(IOrderRepository));
+            .ToArray();
+        controllers.Should().OnlyContain(type =>
+            type.GetConstructors().Single().GetParameters()
+                .Any(parameter =>
+                    parameter.ParameterType == typeof(ISender)));
+        dependencies.Should().NotContain(typeof(IOrderRepository));
+        dependencies.Should().NotContain(type =>
+            type.Name.EndsWith(
+                "CommandHandler", StringComparison.Ordinal)
+            || type.Name.EndsWith(
+                "QueryHandler", StringComparison.Ordinal)
+            || type.Name.EndsWith(
+                "UseCase", StringComparison.Ordinal));
         typeof(CreateOrderRequest).GetProperties(
                 BindingFlags.Instance | BindingFlags.Public)
             .Select(property => property.PropertyType)

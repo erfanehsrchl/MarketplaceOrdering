@@ -29,7 +29,7 @@ The `http` launch profile listens on the URL defined in `launchSettings.json` an
 ## Solution structure
 
 - `MarketplaceOrdering.Domain` — Aggregate, entities, value objects, business rules, algorithms, results, and Domain Events.
-- `MarketplaceOrdering.Application` — use cases, orchestration, output ports, transport-neutral response models, and its `AddApplication()` registration module.
+- `MarketplaceOrdering.Application` — CQRS-style commands, queries, MediatR handlers, orchestration, output ports, transport-neutral response models, and its `AddApplication()` registration module.
 - `MarketplaceOrdering.Infrastructure` — thread-safe in-memory implementations of Application ports and their `AddInfrastructure()` registration module.
 - `MarketplaceOrdering.Api` — ASP.NET Core composition root that invokes both modules and owns controllers, HTTP contracts, error mapping, Swagger, and Development seeding.
 - `MarketplaceOrdering.Domain.Tests` — isolated business-rule and algorithm tests.
@@ -56,12 +56,36 @@ Domain references no other project. Application references Domain. Infrastructur
 
 API remains the final Composition Root and chooses which modules form the running application. Registration details stay with the layer that owns the services:
 
-- Application owns `AddApplication()`, including scoped use cases and `ReservationReleaseCoordinator`, plus singleton `ProportionalDiscountAllocator` and `FulfillmentPlanner`.
+- Application owns `AddApplication()`, including MediatR assembly scanning for transient handlers, scoped `ReservationReleaseCoordinator`, and singleton `ProportionalDiscountAllocator` and `FulfillmentPlanner`.
 - Infrastructure owns `AddInfrastructure()`, including singleton adapters and their Application-port mappings.
 - API invokes both methods and keeps only API-specific registrations such as `DemoDataSeeder`.
 - Domain has no dependency on `Microsoft.Extensions.DependencyInjection` or any container abstraction.
 
-Every stateful adapter is registered first by its concrete type and then mapped to its port by resolving that concrete registration. Consequently, demo seeding, reset operations, and Application use cases observe the exact same singleton instance rather than separate in-memory stores.
+Every stateful adapter is registered first by its concrete type and then mapped to its port by resolving that concrete registration. Consequently, demo seeding, reset operations, and Application handlers observe the exact same singleton instance rather than separate in-memory stores.
+
+### Application dispatch
+
+Application operations use CQRS-style request names: state changes are Commands handled by CommandHandlers, while reads are Queries handled by QueryHandlers. API controllers depend on MediatR `ISender`, map HTTP input to an Application request, and call `Send`. MediatR performs in-process dispatch; the selected Handler retains orchestration responsibility for Domain behavior, output Ports, persistence, response mapping, errors, and cancellation.
+
+```mermaid
+flowchart LR
+    CLIENT["Client"]
+    CONTROLLER["API Controller"]
+    SENDER["MediatR ISender"]
+    HANDLER["CommandHandler or QueryHandler"]
+    DOMAIN["Domain"]
+    PORT["Application Port"]
+    ADAPTER["Infrastructure Adapter"]
+
+    CLIENT --> CONTROLLER
+    CONTROLLER --> SENDER
+    SENDER --> HANDLER
+    HANDLER --> DOMAIN
+    HANDLER --> PORT
+    PORT --> ADAPTER
+```
+
+MediatR is confined to Application dispatch contracts and the API dispatch boundary. Domain and Domain Events remain framework-independent and do not implement MediatR notification contracts. MassTransit is intentionally not used because these operations are synchronous, in-process requests rather than distributed broker messages. MediatR also provides a conventional extension point for future pipeline behaviors, but no pipeline behaviors are currently registered.
 
 ## Visual Architecture and Project Flows
 
@@ -74,7 +98,7 @@ Production project references point inward. Domain is the innermost project and 
 ```mermaid
 flowchart TD
     API["MarketplaceOrdering.Api: composition root invokes modules"]
-    APP["MarketplaceOrdering.Application: use cases, ports, AddApplication"]
+    APP["MarketplaceOrdering.Application: requests, handlers, ports, AddApplication"]
     INFRA["MarketplaceOrdering.Infrastructure: adapters, AddInfrastructure"]
     DOMAIN["MarketplaceOrdering.Domain: business rules"]
 
@@ -153,7 +177,8 @@ Successful Checkout persists every local intent or known result before advancing
 sequenceDiagram
     participant Client
     participant API
-    participant UseCase as CheckoutOrderUseCase
+    participant Sender as MediatR ISender
+    participant Handler as CheckoutOrderCommandHandler
     participant Idempotency as IdempotencyStore
     participant Repository as OrderRepository
     participant Offers as OfferProvider
@@ -163,37 +188,39 @@ sequenceDiagram
     participant Order
 
     Client->>API: POST Checkout with Idempotency-Key
-    API->>UseCase: Execute
-    UseCase->>Idempotency: TryBegin
-    Idempotency-->>UseCase: Started
-    UseCase->>Repository: Load Order and Version
-    Repository-->>UseCase: Isolated Order and Version
-    UseCase->>Order: StartCheckout
-    UseCase->>Repository: Save Processing
-    UseCase->>Offers: Get Offers
-    Offers-->>UseCase: Product Offers
+    API->>Sender: Send CheckoutOrderCommand
+    Sender->>Handler: Handle
+    Handler->>Idempotency: TryBegin
+    Idempotency-->>Handler: Started
+    Handler->>Repository: Load Order and Version
+    Repository-->>Handler: Isolated Order and Version
+    Handler->>Order: StartCheckout
+    Handler->>Repository: Save Processing
+    Handler->>Offers: Get Offers
+    Offers-->>Handler: Product Offers
     opt Selected discount code exists
-        UseCase->>Discounts: Get selected policy
-        Discounts-->>UseCase: DiscountPolicy
+        Handler->>Discounts: Get selected policy
+        Discounts-->>Handler: DiscountPolicy
     end
-    UseCase->>Planner: CreateBestPlan
-    Planner-->>UseCase: FulfillmentPlan
-    UseCase->>Order: AttachFulfillmentPlan
-    UseCase->>Repository: Save Plan
+    Handler->>Planner: CreateBestPlan
+    Planner-->>Handler: FulfillmentPlan
+    Handler->>Order: AttachFulfillmentPlan
+    Handler->>Repository: Save Plan
 
     loop Each selected Vendor
-        UseCase->>Order: BeginInventoryReservation
-        UseCase->>Repository: Save Reservation Intent
-        UseCase->>Inventory: Reserve with deterministic OperationKey
-        Inventory-->>UseCase: ReservationSucceeded
-        UseCase->>Order: Record Reservation Success
-        UseCase->>Repository: Save Active Reservation
+        Handler->>Order: BeginInventoryReservation
+        Handler->>Repository: Save Reservation Intent
+        Handler->>Inventory: Reserve with deterministic OperationKey
+        Inventory-->>Handler: ReservationSucceeded
+        Handler->>Order: Record Reservation Success
+        Handler->>Repository: Save Active Reservation
     end
 
-    UseCase->>Order: CompleteCheckout
-    UseCase->>Repository: Save AwaitingPayment
-    UseCase->>Idempotency: Complete
-    UseCase-->>API: CheckoutOperationResult
+    Handler->>Order: CompleteCheckout
+    Handler->>Repository: Save AwaitingPayment
+    Handler->>Idempotency: Complete
+    Handler-->>Sender: CheckoutOperationResult
+    Sender-->>API: Result
     API-->>Client: 200 OK
 ```
 
@@ -495,7 +522,7 @@ Complete idempotency
 - If external Reserve succeeds but Order persistence fails, immediate idempotent Release is attempted.
 - If that cleanup cannot be confirmed, `IReservationRecoveryStore` records an orphan Reservation.
 - If Order completion persists but idempotency completion fails, an InProgress replay reconciles from persisted Order state.
-- Pending Order-owned releases and orphan recovery records have separate Application recovery use cases.
+- Pending Order-owned releases and orphan recovery records have separate Application recovery handlers.
 
 ## Payment
 
@@ -522,7 +549,7 @@ Domain Events are framework-independent records. Domain has no MediatR, broker, 
 - Domain unit tests cover value objects, Aggregate rules, discount allocation, and exact fulfillment.
 - Application tests cover orchestration, idempotency, compensation, crash windows, payment races, cancellation, expiration, and recovery.
 - Infrastructure tests cover snapshots, isolation, atomic version checks, TransactionId uniqueness, stock concurrency, replay, and thread safety.
-- API tests use `WebApplicationFactory<Program>`, `HttpClient`, real use cases, real Domain behavior, real adapters, deterministic seed data, and a controllable test clock.
+- API tests use `WebApplicationFactory<Program>`, `HttpClient`, real MediatR dispatch and Application handlers, real Domain behavior, real adapters, deterministic seed data, and a controllable test clock.
 - Concurrency tests coordinate tasks without timing delays. No test depends on execution order and no test is skipped.
 
 Final verified count: **393 passing tests**.
@@ -588,7 +615,7 @@ A production system would introduce a relational database, database transactions
 - One Aggregate gives strong ordering consistency; multiple Aggregates could improve independent scaling but require more coordination.
 - Exact search guarantees the assignment's optimal result; a solver or pruned search is more suitable at larger scale.
 - Explicit in-memory snapshots demonstrate isolation and concurrency without introducing EF Core.
-- Concrete use cases keep orchestration discoverable without MediatR or one interface per operation.
+- MediatR request-handler contracts keep orchestration discoverable without adding one custom interface per operation; this introduces an in-process dispatch dependency in Application while keeping Domain independent.
 - Domain Events model facts without requiring a dispatcher in this scope.
 - The API is included for demonstration and integration verification, not as a production edge design.
 - Currency and a separate OrderItems abstraction were avoided because current requirements do not justify them.

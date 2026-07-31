@@ -12,35 +12,35 @@ using MarketplaceOrdering.Domain.Shared;
 
 namespace MarketplaceOrdering.Application.Tests.Orders;
 
-public sealed class OrderUseCaseConcurrencyTests
+public sealed class OrderHandlerConcurrencyTests
 {
     [Fact]
-    public async Task EveryMutationUseCase_ShouldSurfaceConflictWithoutRetry()
+    public async Task EveryMutationHandler_ShouldSurfaceConflictWithoutRetry()
     {
         await AssertConflict(
-            (order, repository, clock) => new AddOrderItemUseCase(repository, clock)
-                .ExecuteAsync(new AddOrderItemCommand(
+            (order, repository, clock) => new AddOrderItemCommandHandler(repository, clock)
+                .Handle(new AddOrderItemCommand(
                     order.Id.Value, Guid.NewGuid(), "Added", 1),
                     CancellationToken.None));
         await AssertConflict(
-            (order, repository, clock) => new ChangeOrderItemQuantityUseCase(repository, clock)
-                .ExecuteAsync(new ChangeOrderItemQuantityCommand(
+            (order, repository, clock) => new ChangeOrderItemQuantityCommandHandler(repository, clock)
+                .Handle(new ChangeOrderItemQuantityCommand(
                     order.Id.Value, order.Items.First().ProductId.Value, 2),
                     CancellationToken.None));
         await AssertConflict(
-            (order, repository, clock) => new RemoveOrderItemUseCase(repository, clock)
-                .ExecuteAsync(new RemoveOrderItemCommand(
+            (order, repository, clock) => new RemoveOrderItemCommandHandler(repository, clock)
+                .Handle(new RemoveOrderItemCommand(
                     order.Id.Value, order.Items.First().ProductId.Value),
                     CancellationToken.None),
             itemCount: 2);
         await AssertConflict(
-            (order, repository, clock) => new ApplyDiscountCodeUseCase(repository, clock)
-                .ExecuteAsync(new ApplyDiscountCodeCommand(
+            (order, repository, clock) => new ApplyDiscountCodeCommandHandler(repository, clock)
+                .Handle(new ApplyDiscountCodeCommand(
                     order.Id.Value, "SAVE"),
                     CancellationToken.None));
         await AssertConflict(
-            (order, repository, clock) => new RemoveDiscountCodeUseCase(repository, clock)
-                .ExecuteAsync(new RemoveDiscountCodeCommand(order.Id.Value),
+            (order, repository, clock) => new RemoveDiscountCodeCommandHandler(repository, clock)
+                .Handle(new RemoveDiscountCodeCommand(order.Id.Value),
                     CancellationToken.None));
     }
 
@@ -53,8 +53,8 @@ public sealed class OrderUseCaseConcurrencyTests
             new DateTimeOffset(2026, 1, 1, 1, 0, 0, TimeSpan.Zero));
         var applyRepository = RepositoryFor(applyOrder);
 
-        var apply = await new ApplyDiscountCodeUseCase(
-            applyRepository, new FakeClock()).ExecuteAsync(
+        var apply = await new ApplyDiscountCodeCommandHandler(
+            applyRepository, new FakeClock()).Handle(
                 new ApplyDiscountCodeCommand(applyOrder.Id.Value, "SAVE"),
                 CancellationToken.None);
 
@@ -67,8 +67,8 @@ public sealed class OrderUseCaseConcurrencyTests
             new DateTimeOffset(2026, 1, 1, 1, 0, 0, TimeSpan.Zero));
         var removeRepository = RepositoryFor(removeOrder);
 
-        var remove = await new RemoveDiscountCodeUseCase(
-            removeRepository, new FakeClock()).ExecuteAsync(
+        var remove = await new RemoveDiscountCodeCommandHandler(
+            removeRepository, new FakeClock()).Handle(
                 new RemoveDiscountCodeCommand(removeOrder.Id.Value),
                 CancellationToken.None);
 

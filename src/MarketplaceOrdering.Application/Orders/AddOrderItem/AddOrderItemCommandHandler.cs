@@ -1,3 +1,4 @@
+using MediatR;
 using MarketplaceOrdering.Application.Common.Abstractions.Persistence;
 using MarketplaceOrdering.Application.Common.Abstractions.Time;
 using MarketplaceOrdering.Application.Common.Errors;
@@ -9,12 +10,13 @@ using MarketplaceOrdering.Domain.ValueObjects;
 
 namespace MarketplaceOrdering.Application.Orders.AddOrderItem;
 
-public sealed class AddOrderItemUseCase
+public sealed class AddOrderItemCommandHandler
+    : IRequestHandler<AddOrderItemCommand, Result<OrderDetails>>
 {
     private readonly IOrderRepository _repository;
     private readonly IClock _clock;
 
-    public AddOrderItemUseCase(IOrderRepository repository, IClock clock)
+    public AddOrderItemCommandHandler(IOrderRepository repository, IClock clock)
     {
         ArgumentNullException.ThrowIfNull(repository);
         ArgumentNullException.ThrowIfNull(clock);
@@ -22,7 +24,7 @@ public sealed class AddOrderItemUseCase
         _clock = clock;
     }
 
-    public async Task<Result<OrderDetails>> ExecuteAsync(
+    public async Task<Result<OrderDetails>> Handle(
         AddOrderItemCommand command,
         CancellationToken cancellationToken)
     {

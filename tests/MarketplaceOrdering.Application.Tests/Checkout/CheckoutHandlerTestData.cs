@@ -13,7 +13,7 @@ namespace MarketplaceOrdering.Application.Tests.Checkout;
 internal sealed class CheckoutTestContext
 {
     internal required Order Order { get; init; }
-    internal required CheckoutOrderUseCase UseCase { get; init; }
+    internal required CheckoutOrderCommandHandler Handler { get; init; }
     internal required FakeOrderRepository Repository { get; init; }
     internal required FakeProductOfferProvider Offers { get; init; }
     internal required FakeDiscountPolicyProvider Discounts { get; init; }
@@ -25,7 +25,7 @@ internal sealed class CheckoutTestContext
     internal required List<string> Journal { get; init; }
 }
 
-internal static class CheckoutUseCaseTestData
+internal static class CheckoutHandlerTestData
 {
     internal static CheckoutTestContext Create(int vendorCount = 1)
     {
@@ -83,7 +83,7 @@ internal static class CheckoutUseCaseTestData
             new ProportionalDiscountAllocator());
         var coordinator = new ReservationReleaseCoordinator(
             inventory, repository, recovery, clock);
-        var useCase = new CheckoutOrderUseCase(
+        var useCase = new CheckoutOrderCommandHandler(
             repository,
             offers,
             discounts,
@@ -97,7 +97,7 @@ internal static class CheckoutUseCaseTestData
         return new CheckoutTestContext
         {
             Order = order,
-            UseCase = useCase,
+            Handler = useCase,
             Repository = repository,
             Offers = offers,
             Discounts = discounts,

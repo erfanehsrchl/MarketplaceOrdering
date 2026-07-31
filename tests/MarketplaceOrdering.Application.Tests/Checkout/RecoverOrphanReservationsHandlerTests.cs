@@ -9,7 +9,7 @@ using MarketplaceOrdering.Domain.ValueObjects;
 
 namespace MarketplaceOrdering.Application.Tests.Checkout;
 
-public sealed class RecoverOrphanReservationsUseCaseTests
+public sealed class RecoverOrphanReservationsCommandHandlerTests
 {
     [Theory]
     [InlineData(0)]
@@ -18,8 +18,8 @@ public sealed class RecoverOrphanReservationsUseCaseTests
     {
         var store = new FakeReservationRecoveryStore();
 
-        var result = await CreateUseCase(store, new FakeInventoryReservationService())
-            .ExecuteAsync(
+        var result = await CreateHandler(store, new FakeInventoryReservationService())
+            .Handle(
                 new RecoverOrphanReservationsCommand(maximum),
                 CancellationToken.None);
 
@@ -34,7 +34,7 @@ public sealed class RecoverOrphanReservationsUseCaseTests
         var inventory = new FakeInventoryReservationService();
         await store.UpsertAsync(Record(1), CancellationToken.None);
 
-        var result = await CreateUseCase(store, inventory).ExecuteAsync(
+        var result = await CreateHandler(store, inventory).Handle(
             new RecoverOrphanReservationsCommand(10),
             CancellationToken.None);
 
@@ -65,7 +65,7 @@ public sealed class RecoverOrphanReservationsUseCaseTests
                 ApplicationErrors.DependencyOperationFailed)
         };
 
-        var result = await CreateUseCase(store, inventory).ExecuteAsync(
+        var result = await CreateHandler(store, inventory).Handle(
             new RecoverOrphanReservationsCommand(10),
             CancellationToken.None);
 
@@ -89,14 +89,14 @@ public sealed class RecoverOrphanReservationsUseCaseTests
                 new InventoryReleaseFailed("release.failed"));
         store.UpsertFailure = ApplicationErrors.DependencyOperationFailed;
 
-        var result = await CreateUseCase(store, inventory).ExecuteAsync(
+        var result = await CreateHandler(store, inventory).Handle(
             new RecoverOrphanReservationsCommand(10),
             CancellationToken.None);
 
         result.Error.Should().Be(ApplicationErrors.DependencyOperationFailed);
     }
 
-    private static RecoverOrphanReservationsUseCase CreateUseCase(
+    private static RecoverOrphanReservationsCommandHandler CreateHandler(
         FakeReservationRecoveryStore store,
         FakeInventoryReservationService inventory) =>
         new(store, inventory, new FakeClock());
@@ -105,7 +105,7 @@ public sealed class RecoverOrphanReservationsUseCaseTests
     {
         var orderId = OrderId.New();
         var attemptId = CheckoutAttemptId.New();
-        var vendorId = CheckoutUseCaseTestData.Vendor(number);
+        var vendorId = CheckoutHandlerTestData.Vendor(number);
         return new ReservationRecoveryRecord(
             orderId,
             attemptId,

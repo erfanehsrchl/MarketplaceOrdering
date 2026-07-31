@@ -1,6 +1,10 @@
+using MediatR;
+using MarketplaceOrdering.Domain.Shared;
+
 namespace MarketplaceOrdering.Application.Checkout.RetryPendingReservationReleases;
 
-public sealed record RetryPendingReservationReleasesCommand(Guid OrderId);
+public sealed record RetryPendingReservationReleasesCommand(Guid OrderId)
+    : IRequest<Result<RetryPendingReservationReleasesResult>>;
 
 public sealed record RetryPendingReservationReleasesResult(
     Guid OrderId,

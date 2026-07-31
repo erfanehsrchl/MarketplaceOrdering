@@ -5,7 +5,7 @@ using MarketplaceOrdering.Application.Tests.Fakes;
 
 namespace MarketplaceOrdering.Application.Tests.Orders;
 
-public sealed class CreateOrderUseCaseTests
+public sealed class CreateOrderCommandHandlerTests
 {
     private static CreateOrderCommand ValidCommand() => new(
         Guid.Parse("20000000-0000-0000-0000-000000000000"),
@@ -23,9 +23,9 @@ public sealed class CreateOrderUseCaseTests
         var repository = new FakeOrderRepository();
         var clock = new FakeClock();
         using var cancellation = new CancellationTokenSource();
-        var useCase = new CreateOrderUseCase(repository, clock);
+        var useCase = new CreateOrderCommandHandler(repository, clock);
 
-        var result = await useCase.ExecuteAsync(
+        var result = await useCase.Handle(
             ValidCommand(), cancellation.Token);
 
         result.IsSuccess.Should().BeTrue();
@@ -50,8 +50,8 @@ public sealed class CreateOrderUseCaseTests
             [new(productId, "Original", 2), new(productId, "Ignored", 3)]);
         var repository = new FakeOrderRepository();
 
-        var result = await new CreateOrderUseCase(repository, new FakeClock())
-            .ExecuteAsync(command, CancellationToken.None);
+        var result = await new CreateOrderCommandHandler(repository, new FakeClock())
+            .Handle(command, CancellationToken.None);
 
         result.Value.Items.Should().ContainSingle();
         result.Value.Items.Single().Quantity.Should().Be(5);
@@ -76,8 +76,8 @@ public sealed class CreateOrderUseCaseTests
     {
         var repository = new FakeOrderRepository();
 
-        var result = await new CreateOrderUseCase(repository, new FakeClock())
-            .ExecuteAsync(command, CancellationToken.None);
+        var result = await new CreateOrderCommandHandler(repository, new FakeClock())
+            .Handle(command, CancellationToken.None);
 
         result.Error.Code.Should().Be(expectedCode);
         repository.AddCalls.Should().Be(0);
@@ -89,8 +89,8 @@ public sealed class CreateOrderUseCaseTests
         var repository = new FakeOrderRepository();
         var command = new CreateOrderCommand(Guid.NewGuid(), "Address", null);
 
-        var result = await new CreateOrderUseCase(repository, new FakeClock())
-            .ExecuteAsync(command, CancellationToken.None);
+        var result = await new CreateOrderCommandHandler(repository, new FakeClock())
+            .Handle(command, CancellationToken.None);
 
         result.Error.Should().Be(ApplicationErrors.InvalidRequest);
         repository.AddCalls.Should().Be(0);
@@ -104,8 +104,8 @@ public sealed class CreateOrderUseCaseTests
             AddFailure = ApplicationErrors.OrderAlreadyExists
         };
 
-        var result = await new CreateOrderUseCase(repository, new FakeClock())
-            .ExecuteAsync(ValidCommand(), CancellationToken.None);
+        var result = await new CreateOrderCommandHandler(repository, new FakeClock())
+            .Handle(ValidCommand(), CancellationToken.None);
 
         result.Error.Should().Be(ApplicationErrors.OrderAlreadyExists);
         repository.AddCalls.Should().Be(1);
