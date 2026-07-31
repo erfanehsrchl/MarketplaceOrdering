@@ -14,6 +14,7 @@ public sealed class ErrorTests
         Error.Conflict("code", "message").Type.Should().Be(ErrorType.Conflict);
         Error.Concurrency("code", "message").Type.Should().Be(ErrorType.Concurrency);
         Error.DependencyFailure("code", "message").Type.Should().Be(ErrorType.DependencyFailure);
+        Error.CapacityExceeded("code", "message").Type.Should().Be(ErrorType.CapacityExceeded);
     }
 
     [Fact]

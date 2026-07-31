@@ -237,7 +237,7 @@ public sealed class DependencyInjectionRegistrationTests
 
         requests.Where(type => type.Name.EndsWith(
                 "Command", StringComparison.Ordinal))
-            .Should().HaveCount(12);
+            .Should().HaveCount(13);
         requests.Where(type => type.Name.EndsWith(
                 "Query", StringComparison.Ordinal))
             .Should().ContainSingle()

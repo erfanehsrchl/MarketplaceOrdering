@@ -18,7 +18,7 @@ public static class ResultHttpMapper
                     StatusCodes.Status409Conflict,
                 ErrorType.BusinessRule =>
                     StatusCodes.Status422UnprocessableEntity,
-                ErrorType.DependencyFailure =>
+                ErrorType.DependencyFailure or ErrorType.CapacityExceeded =>
                     StatusCodes.Status503ServiceUnavailable,
                 _ => StatusCodes.Status500InternalServerError
             }

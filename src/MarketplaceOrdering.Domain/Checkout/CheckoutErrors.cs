@@ -28,4 +28,6 @@ public static class CheckoutErrors
     public static Error CompensationRequired { get; } = Rule("checkout.compensation_required", "Confirmed Reservations require compensation.");
     public static Error CompensationNotComplete { get; } = Rule("checkout.compensation_not_complete", "Reservation compensation is not complete.");
     public static Error FailureRequired { get; } = Rule("checkout.failure_required", "A Checkout failure is required.");
+    public static Error NotStuck { get; } = Rule("checkout.not_stuck", "The Checkout attempt has not exceeded its timeout and cannot be abandoned.");
+    public static Error AbandonedAfterTimeout { get; } = Rule("checkout.abandoned_after_timeout", "The Checkout attempt was abandoned after exceeding its timeout.");
 }

@@ -27,7 +27,7 @@ public sealed class PaymentsControllerTests
         var request = new ConfirmPaymentRequest(
             "transaction-one",
             checkedOut!.CheckoutAttempt!.TotalPayable!.Value,
-            factory.Clock.UtcNow.AddMinutes(1));
+            factory.Clock.UtcNow);
 
         var response = await client.PostAsJsonAsync(
             $"/api/orders/{order.OrderId}/payments/confirm", request);
@@ -62,7 +62,7 @@ public sealed class PaymentsControllerTests
             $"/api/orders/{order.OrderId}/payments/confirm",
             new ConfirmPaymentRequest(
                 "bad-amount", amount,
-                factory.Clock.UtcNow.AddMinutes(1)));
+                factory.Clock.UtcNow));
 
         response.StatusCode.Should().Be(
             HttpStatusCode.UnprocessableEntity);
@@ -79,18 +79,53 @@ public sealed class PaymentsControllerTests
         await ApiTestWorkflow.CheckoutAsync(client, order.OrderId);
         var checkedOut = await client.GetFromJsonAsync<OrderDetails>(
             $"/api/orders/{order.OrderId}");
+        var expiresAt = checkedOut!.CheckoutAttempt!.PaymentExpiresAt!.Value;
+        factory.Clock.UtcNow = expiresAt;
 
         var response = await client.PostAsJsonAsync(
             $"/api/orders/{order.OrderId}/payments/confirm",
             new ConfirmPaymentRequest(
                 "expired",
-                checkedOut!.CheckoutAttempt!.TotalPayable!.Value,
-                checkedOut.CheckoutAttempt.PaymentExpiresAt!.Value));
+                checkedOut.CheckoutAttempt.TotalPayable!.Value,
+                expiresAt));
 
         response.StatusCode.Should().Be(
             HttpStatusCode.UnprocessableEntity);
         (await response.Content.ReadFromJsonAsync<ApiErrorResponse>())!
             .Code.Should().Be("payment.reservation_expired");
+    }
+
+    /// <summary>
+    /// A caller who backdates <c>PaidAt</c> into the live Reservation window
+    /// must not be able to pay after the marketplace clock passed expiration.
+    /// </summary>
+    [Fact]
+    public async Task BackdatedPaidAtAfterExpirationReturns422()
+    {
+        using var factory = new MarketplaceOrderingApiFactory();
+        using var client = factory.CreateClient();
+        var order = await ApiTestWorkflow.CreateDefaultOrderAsync(client);
+        await ApiTestWorkflow.CheckoutAsync(client, order.OrderId);
+        var checkedOut = await client.GetFromJsonAsync<OrderDetails>(
+            $"/api/orders/{order.OrderId}");
+        var expiresAt = checkedOut!.CheckoutAttempt!.PaymentExpiresAt!.Value;
+        factory.Clock.UtcNow = expiresAt.AddSeconds(1);
+
+        var response = await client.PostAsJsonAsync(
+            $"/api/orders/{order.OrderId}/payments/confirm",
+            new ConfirmPaymentRequest(
+                "backdated",
+                checkedOut.CheckoutAttempt.TotalPayable!.Value,
+                expiresAt.AddMinutes(-10)));
+
+        response.StatusCode.Should().Be(
+            HttpStatusCode.UnprocessableEntity);
+        (await response.Content.ReadFromJsonAsync<ApiErrorResponse>())!
+            .Code.Should().Be("payment.reservation_expired");
+        var loaded = await client.GetFromJsonAsync<OrderDetails>(
+            $"/api/orders/{order.OrderId}");
+        loaded!.Status.Should().Be("AwaitingPayment");
+        loaded.Payment.Should().BeNull();
     }
 
     [Fact]
@@ -108,7 +143,7 @@ public sealed class PaymentsControllerTests
             new ConfirmPaymentRequest(
                 "shared-transaction",
                 firstCheckedOut!.CheckoutAttempt!.TotalPayable!.Value,
-                factory.Clock.UtcNow.AddMinutes(1)));
+                factory.Clock.UtcNow));
 
         var inventory = factory.Services.GetRequiredService<
             InMemoryInventoryReservationService>();
@@ -127,7 +162,7 @@ public sealed class PaymentsControllerTests
             new ConfirmPaymentRequest(
                 "shared-transaction",
                 secondCheckedOut!.CheckoutAttempt!.TotalPayable!.Value,
-                factory.Clock.UtcNow.AddMinutes(1)));
+                factory.Clock.UtcNow));
 
         conflict.StatusCode.Should().Be(HttpStatusCode.Conflict);
         (await conflict.Content.ReadFromJsonAsync<ApiErrorResponse>())!

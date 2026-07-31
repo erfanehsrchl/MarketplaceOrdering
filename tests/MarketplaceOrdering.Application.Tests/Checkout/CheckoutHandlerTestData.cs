@@ -22,6 +22,7 @@ internal sealed class CheckoutTestContext
     internal required FakeReservationRecoveryStore Recovery { get; init; }
     internal required FakeClock Clock { get; init; }
     internal required IReservationReleaseCoordinator Coordinator { get; init; }
+    internal required ICheckoutCompensationCoordinator Compensation { get; init; }
     internal required List<string> Journal { get; init; }
 }
 
@@ -82,17 +83,19 @@ internal static class CheckoutHandlerTestData
         var planner = new FulfillmentPlanner(
             new ProportionalDiscountAllocator());
         var coordinator = new ReservationReleaseCoordinator(
-            inventory, repository, recovery, clock);
+            inventory, repository, clock);
+        var guard = new CheckoutIdempotencyGuard(idempotency, clock);
+        var compensation = new CheckoutCompensationCoordinator(
+            repository, inventory, recovery, coordinator, clock);
         var useCase = new CheckoutOrderCommandHandler(
             repository,
             offers,
             discounts,
             inventory,
-            idempotency,
-            recovery,
+            guard,
+            compensation,
             clock,
-            planner,
-            coordinator);
+            planner);
 
         return new CheckoutTestContext
         {
@@ -106,6 +109,7 @@ internal static class CheckoutHandlerTestData
             Recovery = recovery,
             Clock = clock,
             Coordinator = coordinator,
+            Compensation = compensation,
             Journal = journal
         };
     }

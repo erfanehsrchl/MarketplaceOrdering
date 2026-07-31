@@ -20,4 +20,7 @@ public static class PaymentErrors
         "Transaction identifier is already used by another Order.");
     public static Error AmountNotPositive { get; } = Error.BusinessRule(
         "payment.amount_not_positive", "Confirmed payment amount must be positive.");
+    public static Error ReportedTimeNotAcceptable { get; } = Error.BusinessRule(
+        "payment.reported_time_not_acceptable",
+        "The reported payment time is outside the accepted window around the marketplace clock.");
 }

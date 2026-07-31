@@ -32,20 +32,6 @@ public static class CheckoutApplicationErrors
             "The Inventory Reservation outcome is indeterminate.",
             metadata);
 
-    public static Error ReservationPersistenceFailed(
-        IReadOnlyDictionary<string, string> metadata) =>
-        Error.Concurrency(
-            "checkout.reservation_persistence_failed",
-            "A successful Inventory Reservation could not be persisted.",
-            metadata);
-
-    public static Error CompensationPersistenceFailed(
-        IReadOnlyDictionary<string, string> metadata) =>
-        Error.Concurrency(
-            "checkout.compensation_persistence_failed",
-            "Checkout compensation state could not be persisted.",
-            metadata);
-
     public static Error RecoveryRecordFailed(
         IReadOnlyDictionary<string, string> metadata) =>
         Error.DependencyFailure(

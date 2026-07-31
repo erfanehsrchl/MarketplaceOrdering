@@ -48,6 +48,28 @@ public sealed class Order : AggregateRoot<OrderId>
     public CancellationRecord? Cancellation => _cancellation;
     public DateTimeOffset? ExpiredAt { get; private set; }
 
+    /// <summary>
+    /// Whether items and the discount code may still change. Callers use this to
+    /// avoid pointless external calls; the Aggregate re-checks it on every
+    /// mutation, so reading it can never be a way around the rule.
+    /// </summary>
+    public bool IsEditable => Status == OrderStatus.Draft;
+
+    /// <summary>
+    /// Whether this Order has been claimed by a Checkout attempt that has since
+    /// stopped making progress, and may therefore be abandoned back to Draft.
+    /// </summary>
+    /// <remarks>
+    /// The Aggregate owns this decision rather than a background job, because
+    /// "how long a claim may live" is a business rule about the Order, not a
+    /// scheduling detail of whoever happens to sweep it.
+    /// </remarks>
+    public bool IsCheckoutStuckAt(DateTimeOffset now) =>
+        Status == OrderStatus.Processing
+        && _checkoutAttempt is not null
+        && now - _checkoutAttempt.StartedAt
+            >= OrderPolicy.CheckoutAttemptTimeout;
+
     internal void UpdatePersistenceVersion(long version)
     {
         if (version < 0)
@@ -290,10 +312,20 @@ public sealed class Order : AggregateRoot<OrderId>
         return Result.Success();
     }
 
+    /// <param name="paidAt">
+    /// The payment time reported by the external provider. Recorded as the
+    /// business fact, but never trusted for expiration decisions.
+    /// </param>
+    /// <param name="confirmedAt">
+    /// The marketplace's own clock reading. Authoritative for every
+    /// time-sensitive rule, so a stale or forged <paramref name="paidAt"/>
+    /// cannot revive an expired Reservation.
+    /// </param>
     public Result ConfirmPayment(
         TransactionId transactionId,
         MarketplaceOrdering.Domain.Money.Money amount,
-        DateTimeOffset paidAt)
+        DateTimeOffset paidAt,
+        DateTimeOffset confirmedAt)
     {
         if (Status == OrderStatus.Paid && _payment is not null)
         {
@@ -312,6 +344,8 @@ public sealed class Order : AggregateRoot<OrderId>
             || attempt.FulfillmentPlan is null
             || !attempt.PaymentExpiresAt.HasValue)
             return Result.Failure(PaymentErrors.ReservationsInvalid);
+        if (!PaymentPolicy.IsAcceptableReportedTime(paidAt, confirmedAt))
+            return Result.Failure(PaymentErrors.ReportedTimeNotAcceptable);
         if (amount != attempt.FulfillmentPlan.TotalPayable)
             return Result.Failure(PaymentErrors.AmountMismatch);
 
@@ -326,8 +360,12 @@ public sealed class Order : AggregateRoot<OrderId>
                 .SetEquals(attempt.FulfillmentPlan.Vendors.Select(
                     vendor => vendor.VendorId)))
             return Result.Failure(PaymentErrors.ReservationsInvalid);
+
+        // Expiration is decided by the later of the two readings so neither a
+        // backdated report nor a lagging marketplace clock can widen the window.
+        var effectiveAt = paidAt > confirmedAt ? paidAt : confirmedAt;
         if (reservations.Any(reservation =>
-                paidAt >= reservation.ExpiresAt!.Value))
+                effectiveAt >= reservation.ExpiresAt!.Value))
             return Result.Failure(PaymentErrors.ReservationExpired);
 
         var payment = PaymentRecord.Create(transactionId, amount, paidAt);
@@ -667,6 +705,17 @@ public sealed class Order : AggregateRoot<OrderId>
             : Result<CheckoutAttempt>.Failure(CheckoutErrors.AttemptMismatch);
     }
 
+    /// <summary>
+    /// Re-derives the allocation limits from the Plan itself.
+    /// </summary>
+    /// <remarks>
+    /// The planner already enforces these, so this is defence in depth: the
+    /// Aggregate accepts a Plan from outside itself, and "every Product fully
+    /// covered, at most two Vendors each, at most three overall" is an Order
+    /// invariant regardless of which component produced the Plan. Hard-coding
+    /// the limits here rather than reading planner options is deliberate — the
+    /// Order's rules must not be relaxable by configuring a Domain Service.
+    /// </remarks>
     private bool PlanMatchesOrder(FulfillmentPlan plan)
     {
         if (plan.VendorCount is < 1 or > 3)
@@ -702,7 +751,7 @@ public sealed class Order : AggregateRoot<OrderId>
     }
 
     private Result EnsureDraft() =>
-        Status == OrderStatus.Draft
+        IsEditable
             ? Result.Success()
             : Result.Failure(OrderErrors.NotEditable);
 }

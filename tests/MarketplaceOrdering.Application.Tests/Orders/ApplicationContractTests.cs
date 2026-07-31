@@ -222,11 +222,11 @@ public sealed class ApplicationContractTests
                     == typeof(IRequestHandler<,>)))
             .ToArray();
 
-        requests.Should().HaveCount(13);
+        requests.Should().HaveCount(14);
         requests.Should().OnlyContain(type =>
             type.Name.EndsWith("Command", StringComparison.Ordinal)
             || type.Name.EndsWith("Query", StringComparison.Ordinal));
-        handlers.Should().HaveCount(13);
+        handlers.Should().HaveCount(14);
         handlers.Should().OnlyContain(type =>
             type.Name.EndsWith(
                 "CommandHandler", StringComparison.Ordinal)

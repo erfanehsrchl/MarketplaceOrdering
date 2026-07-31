@@ -78,7 +78,7 @@ internal static class InfrastructureTestData
         new(
             OrderId.New(), CheckoutAttemptId.New(), Vendor(1), key,
             ReservationId.New(), "release.failed",
-            createdAt ?? Now, attempts);
+            createdAt ?? Now, attempts, createdAt ?? Now);
 
     internal static Order MakePaid(
         Order order,
@@ -86,7 +86,8 @@ internal static class InfrastructureTestData
     {
         var plan = MakeAwaitingPayment(order);
         order.ConfirmPayment(
-            transactionId, plan.TotalPayable, Now.AddMinutes(4));
+            transactionId, plan.TotalPayable,
+            Now.AddMinutes(4), Now.AddMinutes(4));
         return order;
     }
 

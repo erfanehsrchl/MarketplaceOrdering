@@ -71,9 +71,9 @@ public sealed class RecoverOrphanReservationsCommandHandler
             var updated = record with
             {
                 LastErrorCode = errorCode,
-                AttemptCount = record.AttemptCount + 1
+                AttemptCount = record.AttemptCount + 1,
+                LastAttemptedAt = _clock.UtcNow
             };
-            _ = _clock.UtcNow;
             var stored = await _recoveryStore.UpsertAsync(
                 updated, cancellationToken);
             if (stored.IsFailure)

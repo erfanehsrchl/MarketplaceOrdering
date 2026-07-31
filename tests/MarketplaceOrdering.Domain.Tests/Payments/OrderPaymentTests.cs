@@ -21,9 +21,9 @@ public sealed class OrderPaymentTests
         order.ClearCommittedDomainEvents();
 
         order.ConfirmPayment(
-            transactionId, amount, paidAt).IsSuccess.Should().BeTrue();
+            transactionId, amount, paidAt, paidAt).IsSuccess.Should().BeTrue();
         order.ConfirmPayment(
-            transactionId, amount, paidAt.AddMinutes(1))
+            transactionId, amount, paidAt.AddMinutes(1), paidAt.AddMinutes(1))
             .IsSuccess.Should().BeTrue();
 
         order.Status.Should().Be(OrderStatus.Paid);
@@ -42,11 +42,13 @@ public sealed class OrderPaymentTests
         var order = AwaitingPaymentOrder(out var expiresAt);
         var expected = order.CheckoutAttempt!.FulfillmentPlan!
             .TotalPayable.Amount;
+        var at = expiresAt.AddSeconds(-1);
 
         var result = order.ConfirmPayment(
             TransactionId.Create("transaction").Value,
             MoneyValue.Create(expected + difference).Value,
-            expiresAt.AddSeconds(-1));
+            at,
+            at);
 
         result.Error.Should().Be(PaymentErrors.AmountMismatch);
         order.Status.Should().Be(OrderStatus.AwaitingPayment);
@@ -58,13 +60,82 @@ public sealed class OrderPaymentTests
     public void PaymentAtOrAfterExpiration_ShouldFail(int secondsAfter)
     {
         var order = AwaitingPaymentOrder(out var expiresAt);
+        var at = expiresAt.AddSeconds(secondsAfter);
 
         var result = order.ConfirmPayment(
             TransactionId.Create("transaction").Value,
             order.CheckoutAttempt!.FulfillmentPlan!.TotalPayable,
-            expiresAt.AddSeconds(secondsAfter));
+            at,
+            at);
 
         result.Error.Should().Be(PaymentErrors.ReservationExpired);
+    }
+
+    /// <summary>
+    /// The reported payment time is provider input. If it were trusted for the
+    /// expiration decision, backdating it would buy stock the Reservation no
+    /// longer holds.
+    /// </summary>
+    [Fact]
+    public void BackdatedPaidAt_ShouldNotRevivePaymentAfterExpiration()
+    {
+        var order = AwaitingPaymentOrder(out var expiresAt);
+
+        var result = order.ConfirmPayment(
+            TransactionId.Create("transaction").Value,
+            order.CheckoutAttempt!.FulfillmentPlan!.TotalPayable,
+            expiresAt.AddMinutes(-5),
+            expiresAt.AddSeconds(1));
+
+        result.Error.Should().Be(PaymentErrors.ReservationExpired);
+        order.Status.Should().Be(OrderStatus.AwaitingPayment);
+        order.Payment.Should().BeNull();
+    }
+
+    [Fact]
+    public void ReportedTimeFarFromMarketplaceClock_ShouldFail()
+    {
+        var order = AwaitingPaymentOrder(out var expiresAt);
+        var amount = order.CheckoutAttempt!.FulfillmentPlan!.TotalPayable;
+        var confirmedAt = expiresAt.AddSeconds(-1);
+
+        order.ConfirmPayment(
+            TransactionId.Create("future").Value,
+            amount,
+            confirmedAt + PaymentPolicy.MaximumFutureSkew.Add(
+                TimeSpan.FromSeconds(1)),
+            confirmedAt).Error.Should()
+            .Be(PaymentErrors.ReportedTimeNotAcceptable);
+
+        order.ConfirmPayment(
+            TransactionId.Create("stale").Value,
+            amount,
+            confirmedAt - PaymentPolicy.MaximumReportingDelay.Add(
+                TimeSpan.FromSeconds(1)),
+            confirmedAt).Error.Should()
+            .Be(PaymentErrors.ReportedTimeNotAcceptable);
+
+        order.Status.Should().Be(OrderStatus.AwaitingPayment);
+    }
+
+    [Fact]
+    public void ReportedTimeInsideAcceptedWindow_ShouldSucceed()
+    {
+        var order = AwaitingPaymentOrder(out var expiresAt);
+        // Far enough inside the window that the tolerated skew cannot push the
+        // effective time past expiration; this asserts the skew rule alone.
+        var confirmedAt = expiresAt
+            - PaymentPolicy.MaximumFutureSkew
+            - TimeSpan.FromSeconds(1);
+
+        var result = order.ConfirmPayment(
+            TransactionId.Create("slightly-ahead").Value,
+            order.CheckoutAttempt!.FulfillmentPlan!.TotalPayable,
+            confirmedAt + PaymentPolicy.MaximumFutureSkew,
+            confirmedAt);
+
+        result.IsSuccess.Should().BeTrue();
+        order.Status.Should().Be(OrderStatus.Paid);
     }
 
     [Fact]
@@ -72,19 +143,23 @@ public sealed class OrderPaymentTests
     {
         var order = AwaitingPaymentOrder(out var expiresAt);
         var amount = order.CheckoutAttempt!.FulfillmentPlan!.TotalPayable;
+        var at = expiresAt.AddSeconds(-1);
         order.ConfirmPayment(
             TransactionId.Create("first").Value,
             amount,
-            expiresAt.AddSeconds(-1));
+            at,
+            at);
 
         order.ConfirmPayment(
             TransactionId.Create("second").Value,
             amount,
+            expiresAt.AddSeconds(-2),
             expiresAt.AddSeconds(-2)).Error.Should()
             .Be(PaymentErrors.AlreadyConfirmedWithDifferentData);
         order.ConfirmPayment(
             TransactionId.Create("first").Value,
             MoneyValue.Create(amount.Amount + 1).Value,
+            expiresAt.AddSeconds(-2),
             expiresAt.AddSeconds(-2)).Error.Should()
             .Be(PaymentErrors.AlreadyConfirmedWithDifferentData);
     }

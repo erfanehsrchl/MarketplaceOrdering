@@ -2,6 +2,7 @@ using FluentAssertions;
 using MarketplaceOrdering.Application.Common.Errors;
 using MarketplaceOrdering.Application.Payments.ConfirmPayment;
 using MarketplaceOrdering.Application.Tests.Checkout;
+using MarketplaceOrdering.Application.Tests.Fakes;
 using MarketplaceOrdering.Domain.Payments;
 using MarketplaceOrdering.Domain.ValueObjects;
 
@@ -15,9 +16,10 @@ public sealed class ConfirmPaymentCommandHandlerTests
         var context = await AwaitingContext();
         var transactionId = "transaction-1";
         var paidAt = context.Order.PaymentExpiresAt!.Value.AddSeconds(-1);
+        context.Clock.UtcNow = paidAt;
         using var cancellation = new CancellationTokenSource();
 
-        var result = await new ConfirmPaymentCommandHandler(context.Repository)
+        var result = await Handler(context)
             .Handle(
                 new ConfirmPaymentCommand(
                     context.Order.Id.Value,
@@ -45,18 +47,45 @@ public sealed class ConfirmPaymentCommandHandlerTests
     public async Task DomainFailure_ShouldNotPersistPayment()
     {
         var context = await AwaitingContext();
+        var paidAt = context.Order.PaymentExpiresAt!.Value.AddSeconds(-1);
+        context.Clock.UtcNow = paidAt;
 
-        var result = await new ConfirmPaymentCommandHandler(context.Repository)
+        var result = await Handler(context)
             .Handle(
                 new ConfirmPaymentCommand(
                     context.Order.Id.Value,
                     "transaction",
                     context.Order.CheckoutAttempt!.FulfillmentPlan!
                         .TotalPayable.Amount + 1,
-                    context.Order.PaymentExpiresAt!.Value.AddSeconds(-1)),
+                    paidAt),
                 CancellationToken.None);
 
         result.Error.Should().Be(PaymentErrors.AmountMismatch);
+        context.Repository.SavePaymentCalls.Should().Be(0);
+    }
+
+    /// <summary>
+    /// The provider-reported <c>PaidAt</c> is untrusted input: the marketplace
+    /// clock, not the request body, decides whether Reservations still hold.
+    /// </summary>
+    [Fact]
+    public async Task BackdatedPaidAt_ShouldNotBypassReservationExpiration()
+    {
+        var context = await AwaitingContext();
+        var expiresAt = context.Order.PaymentExpiresAt!.Value;
+        context.Clock.UtcNow = expiresAt.AddSeconds(1);
+
+        var result = await Handler(context)
+            .Handle(
+                new ConfirmPaymentCommand(
+                    context.Order.Id.Value,
+                    "backdated",
+                    context.Order.CheckoutAttempt!.FulfillmentPlan!
+                        .TotalPayable.Amount,
+                    expiresAt.AddMinutes(-5)),
+                CancellationToken.None);
+
+        result.Error.Should().Be(PaymentErrors.ReservationExpired);
         context.Repository.SavePaymentCalls.Should().Be(0);
     }
 
@@ -67,15 +96,17 @@ public sealed class ConfirmPaymentCommandHandlerTests
         var transactionId = TransactionId.Create("already-used").Value;
         context.Repository.ClaimedTransactionIds[transactionId.Value] =
             OrderId.New();
+        var paidAt = context.Order.PaymentExpiresAt!.Value.AddSeconds(-1);
+        context.Clock.UtcNow = paidAt;
 
-        var result = await new ConfirmPaymentCommandHandler(context.Repository)
+        var result = await Handler(context)
             .Handle(
                 new ConfirmPaymentCommand(
                     context.Order.Id.Value,
                     transactionId.Value,
                     context.Order.CheckoutAttempt!.FulfillmentPlan!
                         .TotalPayable.Amount,
-                    context.Order.PaymentExpiresAt!.Value.AddSeconds(-1)),
+                    paidAt),
                 CancellationToken.None);
 
         result.Error.Should().Be(PaymentErrors.TransactionIdAlreadyUsed);
@@ -90,21 +121,27 @@ public sealed class ConfirmPaymentCommandHandlerTests
         context.Repository.SavePaymentFailure =
             ApplicationErrors.OrderVersionConflict;
         var eventCount = context.Order.DomainEvents.Count;
+        var paidAt = context.Order.PaymentExpiresAt!.Value.AddSeconds(-1);
+        context.Clock.UtcNow = paidAt;
 
-        var result = await new ConfirmPaymentCommandHandler(context.Repository)
+        var result = await Handler(context)
             .Handle(
                 new ConfirmPaymentCommand(
                     context.Order.Id.Value,
                     "transaction",
                     context.Order.CheckoutAttempt!.FulfillmentPlan!
                         .TotalPayable.Amount,
-                    context.Order.PaymentExpiresAt!.Value.AddSeconds(-1)),
+                    paidAt),
                 CancellationToken.None);
 
         result.Error.Should().Be(ApplicationErrors.OrderVersionConflict);
         context.Repository.SavePaymentCalls.Should().Be(1);
         context.Order.DomainEvents.Count.Should().Be(eventCount + 1);
     }
+
+    private static ConfirmPaymentCommandHandler Handler(
+        CheckoutTestContext context) =>
+        new(context.Repository, context.Clock);
 
     private static async Task<CheckoutTestContext> AwaitingContext()
     {

@@ -11,8 +11,11 @@ internal sealed class FakeInventoryReservationService
         ReservationResults { get; } = [];
     internal Dictionary<VendorId, Result<InventoryReleaseOutcome>>
         ReleaseResults { get; } = [];
+    internal Dictionary<VendorId, Result<InventoryReservationOutcome>>
+        ResolveResults { get; } = [];
     internal List<InventoryReservationRequest> ReservationRequests { get; } = [];
     internal List<InventoryReleaseRequest> ReleaseRequests { get; } = [];
+    internal List<InventoryReservationQuery> ResolveQueries { get; } = [];
     internal List<CancellationToken> CapturedCancellationTokens { get; } = [];
     internal IList<string>? Journal { get; set; }
     internal Action<InventoryReservationRequest>? AfterReserve { get; set; }
@@ -42,6 +45,23 @@ internal sealed class FakeInventoryReservationService
         }
         AfterReserve?.Invoke(request);
         return Task.FromResult(result);
+    }
+
+    public Task<Result<InventoryReservationOutcome>> ResolveAsync(
+        InventoryReservationQuery query,
+        CancellationToken cancellationToken)
+    {
+        ResolveQueries.Add(query);
+        CapturedCancellationTokens.Add(cancellationToken);
+        Journal?.Add($"Inventory.Resolve.{query.VendorId}");
+        if (ResolveResults.TryGetValue(query.VendorId, out var configured))
+            return Task.FromResult(configured);
+        // Mirrors the port contract: an operation key the service never saw
+        // proves the reservation call never landed.
+        InventoryReservationOutcome missing =
+            new InventoryReservationRejected("reservation.not_recorded");
+        return Task.FromResult(
+            Result<InventoryReservationOutcome>.Success(missing));
     }
 
     public Task<Result<InventoryReleaseOutcome>> ReleaseAsync(

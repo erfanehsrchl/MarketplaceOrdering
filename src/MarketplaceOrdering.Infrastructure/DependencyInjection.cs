@@ -1,4 +1,5 @@
 using MarketplaceOrdering.Application.Common.Abstractions.Discounts;
+using MarketplaceOrdering.Application.Common.Abstractions.Events;
 using MarketplaceOrdering.Application.Common.Abstractions.Idempotency;
 using MarketplaceOrdering.Application.Common.Abstractions.Inventory;
 using MarketplaceOrdering.Application.Common.Abstractions.Offers;
@@ -6,6 +7,7 @@ using MarketplaceOrdering.Application.Common.Abstractions.Persistence;
 using MarketplaceOrdering.Application.Common.Abstractions.Recovery;
 using MarketplaceOrdering.Application.Common.Abstractions.Time;
 using MarketplaceOrdering.Infrastructure.Discounts;
+using MarketplaceOrdering.Infrastructure.Events;
 using MarketplaceOrdering.Infrastructure.Idempotency;
 using MarketplaceOrdering.Infrastructure.Inventory;
 using MarketplaceOrdering.Infrastructure.Offers;
@@ -24,6 +26,10 @@ public static class DependencyInjection
         services.AddSingleton<SystemClock>();
         services.AddSingleton<IClock>(
             provider => provider.GetRequiredService<SystemClock>());
+        services.AddSingleton<InMemoryDomainEventOutbox>();
+        services.AddSingleton<IDomainEventOutbox>(
+            provider => provider.GetRequiredService<
+                InMemoryDomainEventOutbox>());
         services.AddSingleton<InMemoryOrderRepository>();
         services.AddSingleton<IOrderRepository>(
             provider => provider.GetRequiredService<InMemoryOrderRepository>());

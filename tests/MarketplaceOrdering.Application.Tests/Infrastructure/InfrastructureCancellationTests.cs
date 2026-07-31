@@ -6,6 +6,7 @@ using MarketplaceOrdering.Infrastructure.Discounts;
 using MarketplaceOrdering.Infrastructure.Idempotency;
 using MarketplaceOrdering.Infrastructure.Inventory;
 using MarketplaceOrdering.Infrastructure.Offers;
+using MarketplaceOrdering.Infrastructure.Events;
 using MarketplaceOrdering.Infrastructure.Persistence.InMemory;
 using MarketplaceOrdering.Infrastructure.Recovery;
 
@@ -19,7 +20,7 @@ public sealed class InfrastructureCancellationTests
     [Fact]
     public async Task OrderRepository_PreCancelledAddDoesNotCreateOrVersionOrder()
     {
-        var repository = new InMemoryOrderRepository();
+        var repository = new InMemoryOrderRepository(new InMemoryDomainEventOutbox());
         var order = InfrastructureTestData.Order();
 
         await FluentActions.Awaiting(() =>

@@ -1,5 +1,6 @@
 using FluentAssertions;
 using MarketplaceOrdering.Domain.ValueObjects;
+using MarketplaceOrdering.Infrastructure.Events;
 using MarketplaceOrdering.Infrastructure.Persistence.InMemory;
 
 namespace MarketplaceOrdering.Application.Tests.Infrastructure.Persistence;
@@ -9,7 +10,7 @@ public sealed class InMemoryPaymentPersistenceTests
     [Fact]
     public async Task TransactionClaimAndPaymentSaveAreAtomicAndGlobal()
     {
-        var repository = new InMemoryOrderRepository();
+        var repository = new InMemoryOrderRepository(new InMemoryDomainEventOutbox());
         var transactionId = TransactionId.Create("tx-one").Value;
         var first = InfrastructureTestData.Order();
         var second = InfrastructureTestData.Order();
@@ -34,7 +35,7 @@ public sealed class InMemoryPaymentPersistenceTests
     [Fact]
     public async Task VersionConflictDoesNotClaimTransaction()
     {
-        var repository = new InMemoryOrderRepository();
+        var repository = new InMemoryOrderRepository(new InMemoryDomainEventOutbox());
         var transactionId = TransactionId.Create("tx-stale").Value;
         var original = InfrastructureTestData.Order();
         var valid = InfrastructureTestData.Order();
@@ -60,7 +61,7 @@ public sealed class InMemoryPaymentPersistenceTests
     [Fact]
     public async Task SamePersistedPaymentReplayIsANoOp()
     {
-        var repository = new InMemoryOrderRepository();
+        var repository = new InMemoryOrderRepository(new InMemoryDomainEventOutbox());
         var transactionId = TransactionId.Create("tx-replay").Value;
         var order = InfrastructureTestData.Order();
         await repository.AddAsync(order, default);

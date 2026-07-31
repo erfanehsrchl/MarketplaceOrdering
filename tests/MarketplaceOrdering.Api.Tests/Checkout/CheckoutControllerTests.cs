@@ -117,21 +117,43 @@ public sealed class CheckoutControllerTests
             .GetInt64().Should().Be(575);
     }
 
+    /// <summary>
+    /// A code that can never work is rejected while the Order is still a Draft,
+    /// so the customer learns immediately instead of at Checkout.
+    /// </summary>
     [Fact]
-    public async Task InactiveDiscountReturnsSpecificBusinessError()
+    public async Task InactiveDiscountIsRejectedWhenApplied()
     {
         using var factory = new MarketplaceOrderingApiFactory();
         using var client = factory.CreateClient();
         var order = await ApiTestWorkflow.CreateDefaultOrderAsync(client);
-        await client.PutAsJsonAsync(
+
+        var response = await client.PutAsJsonAsync(
             $"/api/orders/{order.OrderId}/discount",
             new ApplyDiscountCodeRequest("INACTIVE"));
-
-        var response = await ApiTestWorkflow.CheckoutAsync(
-            client, order.OrderId);
 
         response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
         (await response.Content.ReadFromJsonAsync<ApiErrorResponse>())!
             .Code.Should().Be("discount.inactive");
+        var loaded = await client.GetFromJsonAsync<OrderDetails>(
+            $"/api/orders/{order.OrderId}");
+        loaded!.SelectedDiscount.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task UnknownDiscountCodeIsRejectedWhenApplied()
+    {
+        using var factory = new MarketplaceOrderingApiFactory();
+        using var client = factory.CreateClient();
+        var order = await ApiTestWorkflow.CreateDefaultOrderAsync(client);
+
+        var response = await client.PutAsJsonAsync(
+            $"/api/orders/{order.OrderId}/discount",
+            new ApplyDiscountCodeRequest("NO-SUCH-CODE"));
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        var loaded = await client.GetFromJsonAsync<OrderDetails>(
+            $"/api/orders/{order.OrderId}");
+        loaded!.SelectedDiscount.Should().BeNull();
     }
 }

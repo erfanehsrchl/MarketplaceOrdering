@@ -4,6 +4,7 @@ using MarketplaceOrdering.Domain.Fulfillment;
 using MarketplaceOrdering.Domain.Money;
 using MarketplaceOrdering.Domain.ValueObjects;
 using MarketplaceOrdering.Infrastructure.Discounts;
+using MarketplaceOrdering.Infrastructure.Events;
 using MarketplaceOrdering.Infrastructure.Idempotency;
 using MarketplaceOrdering.Infrastructure.Inventory;
 using MarketplaceOrdering.Infrastructure.Offers;
@@ -19,6 +20,8 @@ public sealed class DemoDataSeeder
         "reservation-rejection";
     public const string ReservationIndeterminateScenario =
         "reservation-indeterminate";
+    public const string ReservationLostResponseScenario =
+        "reservation-lost-response";
     public const string ReleaseFailureScenario = "release-failure";
 
     public static readonly CustomerId CustomerId =
@@ -41,6 +44,7 @@ public sealed class DemoDataSeeder
     private readonly InMemoryInventoryReservationService _inventory;
     private readonly InMemoryCheckoutIdempotencyStore _idempotency;
     private readonly InMemoryReservationRecoveryStore _recovery;
+    private readonly InMemoryDomainEventOutbox _outbox;
 
     public DemoDataSeeder(
         InMemoryOrderRepository orders,
@@ -48,7 +52,8 @@ public sealed class DemoDataSeeder
         InMemoryDiscountPolicyProvider discounts,
         InMemoryInventoryReservationService inventory,
         InMemoryCheckoutIdempotencyStore idempotency,
-        InMemoryReservationRecoveryStore recovery)
+        InMemoryReservationRecoveryStore recovery,
+        InMemoryDomainEventOutbox outbox)
     {
         _orders = orders;
         _offers = offers;
@@ -56,6 +61,7 @@ public sealed class DemoDataSeeder
         _inventory = inventory;
         _idempotency = idempotency;
         _recovery = recovery;
+        _outbox = outbox;
     }
 
     public Task<DemoScenarioResponse> SeedAsync(
@@ -73,6 +79,7 @@ public sealed class DemoDataSeeder
         _inventory.Reset();
         _idempotency.Reset();
         _recovery.Reset();
+        _outbox.Reset();
 
         _offers.ReplaceOffers(CreateOffers());
         _discounts.ReplacePolicies(CreatePolicies());
@@ -98,6 +105,12 @@ public sealed class DemoDataSeeder
                     InMemoryReservationBehavior.Indeterminate(
                         "reservation.demo_indeterminate"));
                 break;
+            case ReservationLostResponseScenario:
+                _inventory.ConfigureReservationBehavior(
+                    Vendor3Id,
+                    InMemoryReservationBehavior.LostResponse(
+                        "reservation.demo_lost_response"));
+                break;
             case ReleaseFailureScenario:
                 _inventory.ConfigureReleaseBehavior(
                     Vendor3Id,
@@ -122,6 +135,7 @@ public sealed class DemoDataSeeder
         DefaultScenario,
         ReservationRejectionScenario,
         ReservationIndeterminateScenario,
+        ReservationLostResponseScenario,
         ReleaseFailureScenario
     ];
 

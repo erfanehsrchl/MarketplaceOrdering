@@ -1,3 +1,4 @@
+using MarketplaceOrdering.Application.Common.Abstractions.Events;
 using MarketplaceOrdering.Application.Common.Abstractions.Persistence;
 using MarketplaceOrdering.Application.Common.Errors;
 using MarketplaceOrdering.Domain.Orders;
@@ -12,6 +13,13 @@ public sealed class InMemoryOrderRepository : IOrderRepository
     private readonly object _syncRoot = new();
     private readonly Dictionary<OrderId, OrderPersistenceSnapshot> _orders = [];
     private readonly Dictionary<TransactionId, OrderId> _transactionOwners = [];
+    private readonly IDomainEventOutbox _outbox;
+
+    public InMemoryOrderRepository(IDomainEventOutbox outbox)
+    {
+        ArgumentNullException.ThrowIfNull(outbox);
+        _outbox = outbox;
+    }
 
     public void Reset()
     {
@@ -56,7 +64,7 @@ public sealed class InMemoryOrderRepository : IOrderRepository
                 order, initialVersion);
             _orders.Add(order.Id, snapshot);
             order.UpdatePersistenceVersion(initialVersion);
-            order.ClearCommittedDomainEvents();
+            Commit(order, initialVersion);
             return Task.FromResult(Result<long>.Success(initialVersion));
         }
     }
@@ -80,7 +88,7 @@ public sealed class InMemoryOrderRepository : IOrderRepository
                 order, version);
             _orders[order.Id] = snapshot;
             order.UpdatePersistenceVersion(version);
-            order.ClearCommittedDomainEvents();
+            Commit(order, version);
             return Task.FromResult(Result<long>.Success(version));
         }
     }
@@ -124,8 +132,20 @@ public sealed class InMemoryOrderRepository : IOrderRepository
             _transactionOwners[transactionId] = order.Id;
             _orders[order.Id] = snapshot;
             order.UpdatePersistenceVersion(version);
-            order.ClearCommittedDomainEvents();
+            Commit(order, version);
             return Task.FromResult(Result<long>.Success(version));
         }
+    }
+
+    /// <summary>
+    /// Publishes the Aggregate's pending Domain Events to the outbox and clears
+    /// them, inside the same critical section that stored the snapshot. Either
+    /// the new state and its events are both visible, or neither is.
+    /// </summary>
+    private void Commit(Order order, long version)
+    {
+        if (order.DomainEvents.Count > 0)
+            _outbox.Append(order.Id, version, order.DomainEvents);
+        order.ClearCommittedDomainEvents();
     }
 }

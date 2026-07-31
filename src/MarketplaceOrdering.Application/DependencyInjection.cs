@@ -18,6 +18,12 @@ public static class DependencyInjection
         services.AddScoped<
             IReservationReleaseCoordinator,
             ReservationReleaseCoordinator>();
+        services.AddScoped<
+            ICheckoutIdempotencyGuard,
+            CheckoutIdempotencyGuard>();
+        services.AddScoped<
+            ICheckoutCompensationCoordinator,
+            CheckoutCompensationCoordinator>();
         return services;
     }
 }

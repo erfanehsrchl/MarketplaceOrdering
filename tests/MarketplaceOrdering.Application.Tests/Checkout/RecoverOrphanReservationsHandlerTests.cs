@@ -131,6 +131,7 @@ public sealed class RecoverOrphanReservationsCommandHandlerTests
             ReservationId.New(),
             "release.initial",
             new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero),
-            1);
+            1,
+            new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero));
     }
 }

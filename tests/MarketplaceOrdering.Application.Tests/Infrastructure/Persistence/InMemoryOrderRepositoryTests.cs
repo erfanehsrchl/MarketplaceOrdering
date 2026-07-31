@@ -1,4 +1,5 @@
 using FluentAssertions;
+using MarketplaceOrdering.Infrastructure.Events;
 using MarketplaceOrdering.Infrastructure.Persistence.InMemory;
 using MarketplaceOrdering.Domain.Orders;
 using MarketplaceOrdering.Domain.ValueObjects;
@@ -10,7 +11,7 @@ public sealed class InMemoryOrderRepositoryTests
     [Fact]
     public async Task AddAndLoadUseVersionOneAndCommitEvents()
     {
-        var repository = new InMemoryOrderRepository();
+        var repository = new InMemoryOrderRepository(new InMemoryDomainEventOutbox());
         var order = InfrastructureTestData.Order();
         order.Version.Should().Be(0);
 
@@ -28,7 +29,7 @@ public sealed class InMemoryOrderRepositoryTests
     [Fact]
     public async Task DuplicateAddFailsWithoutClearingEvents()
     {
-        var repository = new InMemoryOrderRepository();
+        var repository = new InMemoryOrderRepository(new InMemoryDomainEventOutbox());
         var id = OrderId.New();
         await repository.AddAsync(InfrastructureTestData.Order(id), default);
         var duplicate = InfrastructureTestData.Order(id);
@@ -43,7 +44,7 @@ public sealed class InMemoryOrderRepositoryTests
     [Fact]
     public async Task MissingLoadAndSaveReturnNotFound()
     {
-        var repository = new InMemoryOrderRepository();
+        var repository = new InMemoryOrderRepository(new InMemoryDomainEventOutbox());
         var order = InfrastructureTestData.Order();
 
         (await repository.LoadAsync(order.Id, default))
@@ -55,7 +56,7 @@ public sealed class InMemoryOrderRepositoryTests
     [Fact]
     public async Task SaveIsOptimisticAndConflictPreservesStateAndEvents()
     {
-        var repository = new InMemoryOrderRepository();
+        var repository = new InMemoryOrderRepository(new InMemoryDomainEventOutbox());
         var order = InfrastructureTestData.Order();
         await repository.AddAsync(order, default);
         var first = (await repository.LoadAsync(order.Id, default)).Value;
@@ -81,7 +82,7 @@ public sealed class InMemoryOrderRepositoryTests
     [Fact]
     public async Task AggregateAndNestedStateAreIsolatedAcrossLoads()
     {
-        var repository = new InMemoryOrderRepository();
+        var repository = new InMemoryOrderRepository(new InMemoryDomainEventOutbox());
         var order = InfrastructureTestData.Order();
         await repository.AddAsync(order, default);
         order.ChangeItemQuantity(order.Items.Single().ProductId,
@@ -101,7 +102,7 @@ public sealed class InMemoryOrderRepositoryTests
     [Fact]
     public async Task ConcurrentStaleSavesAllowExactlyOneWinner()
     {
-        var repository = new InMemoryOrderRepository();
+        var repository = new InMemoryOrderRepository(new InMemoryDomainEventOutbox());
         var order = InfrastructureTestData.Order();
         await repository.AddAsync(order, default);
         var left = (await repository.LoadAsync(order.Id, default)).Value;
@@ -131,7 +132,7 @@ public sealed class InMemoryOrderRepositoryTests
     [Fact]
     public async Task ConcurrentDuplicateAddsAllowExactlyOneWinner()
     {
-        var repository = new InMemoryOrderRepository();
+        var repository = new InMemoryOrderRepository(new InMemoryDomainEventOutbox());
         var id = OrderId.New();
         var results = await Task.WhenAll(
             Task.Run(() => repository.AddAsync(
@@ -147,7 +148,7 @@ public sealed class InMemoryOrderRepositoryTests
     [Fact]
     public async Task CheckoutCancellationAndExpirationStateSurviveRehydration()
     {
-        var repository = new InMemoryOrderRepository();
+        var repository = new InMemoryOrderRepository(new InMemoryDomainEventOutbox());
         var cancelled = InfrastructureTestData.Order();
         await repository.AddAsync(cancelled, default);
         InfrastructureTestData.MakeAwaitingPayment(cancelled);

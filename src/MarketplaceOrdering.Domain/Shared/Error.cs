@@ -67,6 +67,12 @@ public sealed record Error
         IReadOnlyDictionary<string, string>? metadata = null) =>
         Create(code, message, ErrorType.Concurrency, metadata);
 
+    public static Error CapacityExceeded(
+        string code,
+        string message,
+        IReadOnlyDictionary<string, string>? metadata = null) =>
+        Create(code, message, ErrorType.CapacityExceeded, metadata);
+
     public static Error DependencyFailure(
         string code,
         string message,

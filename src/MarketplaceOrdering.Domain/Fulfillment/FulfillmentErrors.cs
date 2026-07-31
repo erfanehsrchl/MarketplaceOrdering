@@ -20,4 +20,9 @@ public static class FulfillmentErrors
         "fulfillment.calculation_overflow", "Fulfillment monetary calculation overflowed.");
     public static Error InvalidAllocation { get; } = Error.BusinessRule(
         "fulfillment.invalid_allocation", "The product allocation is invalid.");
+    // Not a BusinessRule: the Order is perfectly valid and the customer did
+    // nothing wrong — the search simply could not prove an optimum in time.
+    public static Error SearchBudgetExceeded { get; } = Error.CapacityExceeded(
+        "fulfillment.search_budget_exceeded",
+        "The fulfillment search exceeded its configured work limit before it could prove an optimal plan.");
 }

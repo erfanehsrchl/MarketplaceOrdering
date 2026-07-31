@@ -13,6 +13,15 @@ public sealed record InventoryReservationItem(
     ProductId ProductId,
     Quantity Quantity);
 
+/// <summary>
+/// Read-only lookup of a previously attempted Reservation by its operation key.
+/// </summary>
+public sealed record InventoryReservationQuery(
+    OrderId OrderId,
+    CheckoutAttemptId CheckoutAttemptId,
+    VendorId VendorId,
+    ReservationOperationKey OperationKey);
+
 public abstract record InventoryReservationOutcome;
 
 public sealed record InventoryReservationSucceeded(

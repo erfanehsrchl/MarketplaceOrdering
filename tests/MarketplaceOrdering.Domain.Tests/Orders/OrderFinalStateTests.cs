@@ -42,6 +42,7 @@ public sealed class OrderFinalStateTests
         paid.ConfirmPayment(
             TransactionId.Create("paid").Value,
             paid.CheckoutAttempt!.FulfillmentPlan!.TotalPayable,
+            expiresAt.AddSeconds(-1),
             expiresAt.AddSeconds(-1));
         var expired = OrderPaymentTests.AwaitingPaymentOrder(
             out var expiration);

@@ -1,6 +1,5 @@
 using MarketplaceOrdering.Application.Common.Abstractions.Inventory;
 using MarketplaceOrdering.Application.Common.Abstractions.Persistence;
-using MarketplaceOrdering.Application.Common.Abstractions.Recovery;
 using MarketplaceOrdering.Application.Common.Abstractions.Time;
 using MarketplaceOrdering.Application.Common.Errors;
 using MarketplaceOrdering.Domain.Checkout;
@@ -17,10 +16,18 @@ public sealed class ReservationReleaseCoordinator
     private readonly IOrderRepository _orderRepository;
     private readonly IClock _clock;
 
+    /// <remarks>
+    /// This coordinator deliberately does not depend on
+    /// <c>IReservationRecoveryStore</c>. Reservations it releases are already
+    /// recorded on the Order, so a failed release becomes
+    /// <c>ReleasePending</c> Aggregate state and is retried by
+    /// <c>RetryPendingReservationReleases</c>. The recovery store exists for the
+    /// opposite case only: a Reservation the external service confirmed that the
+    /// Order never managed to persist, which no Aggregate can point at.
+    /// </remarks>
     public ReservationReleaseCoordinator(
         IInventoryReservationService inventoryReservationService,
         IOrderRepository orderRepository,
-        IReservationRecoveryStore reservationRecoveryStore,
         IClock clock)
     {
         _inventoryReservationService = inventoryReservationService;

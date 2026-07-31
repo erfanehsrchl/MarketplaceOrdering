@@ -34,7 +34,8 @@ public sealed class OrderHandlerConcurrencyTests
                     CancellationToken.None),
             itemCount: 2);
         await AssertConflict(
-            (order, repository, clock) => new ApplyDiscountCodeCommandHandler(repository, clock)
+            (order, repository, clock) => new ApplyDiscountCodeCommandHandler(
+                    repository, ApplicationTestData.DiscountProvider(), clock)
                 .Handle(new ApplyDiscountCodeCommand(
                     order.Id.Value, "SAVE"),
                     CancellationToken.None));
@@ -54,7 +55,9 @@ public sealed class OrderHandlerConcurrencyTests
         var applyRepository = RepositoryFor(applyOrder);
 
         var apply = await new ApplyDiscountCodeCommandHandler(
-            applyRepository, new FakeClock()).Handle(
+            applyRepository,
+            ApplicationTestData.DiscountProvider(),
+            new FakeClock()).Handle(
                 new ApplyDiscountCodeCommand(applyOrder.Id.Value, "SAVE"),
                 CancellationToken.None);
 

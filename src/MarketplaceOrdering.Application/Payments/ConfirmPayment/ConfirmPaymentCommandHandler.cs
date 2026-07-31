@@ -1,5 +1,6 @@
 using MediatR;
 using MarketplaceOrdering.Application.Common.Abstractions.Persistence;
+using MarketplaceOrdering.Application.Common.Abstractions.Time;
 using MarketplaceOrdering.Application.Common.Errors;
 using MarketplaceOrdering.Domain.Money;
 using MarketplaceOrdering.Domain.Shared;
@@ -11,10 +12,14 @@ public sealed class ConfirmPaymentCommandHandler
     : IRequestHandler<ConfirmPaymentCommand, Result<ConfirmPaymentResult>>
 {
     private readonly IOrderRepository _orderRepository;
+    private readonly IClock _clock;
 
-    public ConfirmPaymentCommandHandler(IOrderRepository orderRepository)
+    public ConfirmPaymentCommandHandler(
+        IOrderRepository orderRepository,
+        IClock clock)
     {
         _orderRepository = orderRepository;
+        _clock = clock;
     }
 
     public async Task<Result<ConfirmPaymentResult>> Handle(
@@ -39,7 +44,10 @@ public sealed class ConfirmPaymentCommandHandler
             return Result<ConfirmPaymentResult>.Failure(loaded.Error);
         var order = loaded.Value;
         var confirmed = order.ConfirmPayment(
-            transactionId.Value, amount.Value, command.PaidAt);
+            transactionId.Value,
+            amount.Value,
+            command.PaidAt,
+            _clock.UtcNow);
         if (confirmed.IsFailure)
             return Result<ConfirmPaymentResult>.Failure(confirmed.Error);
         var saved = await _orderRepository.SavePaymentAsync(

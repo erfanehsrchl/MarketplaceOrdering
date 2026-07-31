@@ -1,3 +1,4 @@
+using MarketplaceOrdering.Domain.Discounts;
 using MarketplaceOrdering.Domain.Orders;
 using MarketplaceOrdering.Domain.ValueObjects;
 
@@ -5,6 +6,22 @@ namespace MarketplaceOrdering.Application.Tests.Fakes;
 
 internal static class ApplicationTestData
 {
+    internal static DiscountPolicy DiscountPolicy(
+        string code = "SAVE",
+        bool isActive = true,
+        DateTimeOffset? startsAt = null,
+        DateTimeOffset? endsAt = null) =>
+        Domain.Discounts.DiscountPolicy.Create(
+            DiscountCode.Create(code).Value,
+            PercentageDiscountValue.Create(10).Value,
+            isActive,
+            startsAt,
+            endsAt).Value;
+
+    internal static FakeDiscountPolicyProvider DiscountProvider(
+        DiscountPolicy? policy = null) =>
+        new() { Policy = policy ?? DiscountPolicy() };
+
     internal static Order CreateOrder(int itemCount = 1)
     {
         var items = Enumerable.Range(1, itemCount)

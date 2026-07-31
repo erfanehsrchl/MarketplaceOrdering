@@ -12,6 +12,7 @@ public sealed class InMemoryInventoryReservationService
 {
     private const string InsufficientInventoryCode =
         "reservation.insufficient_inventory";
+    private const string NotRecordedCode = "reservation.not_recorded";
     private readonly object _syncRoot = new();
     private readonly IClock _clock;
     private readonly Dictionary<StockKey, int> _stock = [];
@@ -126,20 +127,24 @@ public sealed class InMemoryInventoryReservationService
                 return Task.FromResult(
                     Result<InventoryReservationOutcome>.Failure(behavior.Error!));
 
-            InventoryReservationOutcome? forced = behavior.Kind switch
+            if (behavior.Kind == InMemoryReservationBehaviorKind.Reject)
             {
-                InMemoryReservationBehaviorKind.Reject =>
-                    new InventoryReservationRejected(behavior.FailureCode!),
-                InMemoryReservationBehaviorKind.Indeterminate =>
-                    new InventoryReservationIndeterminate(behavior.FailureCode!),
-                _ => null
-            };
-            if (forced is not null)
-            {
+                InventoryReservationOutcome rejection =
+                    new InventoryReservationRejected(behavior.FailureCode!);
                 _operations.Add(request.OperationKey,
-                    new OperationRecord(fingerprint, forced));
+                    new OperationRecord(fingerprint, rejection));
                 return Task.FromResult(
-                    Result<InventoryReservationOutcome>.Success(forced));
+                    Result<InventoryReservationOutcome>.Success(rejection));
+            }
+
+            if (behavior.Kind == InMemoryReservationBehaviorKind.Indeterminate)
+            {
+                // The request never landed: no stock moves and no operation key
+                // is stored, so a later lookup can prove nothing is held.
+                InventoryReservationOutcome unknown =
+                    new InventoryReservationIndeterminate(behavior.FailureCode!);
+                return Task.FromResult(
+                    Result<InventoryReservationOutcome>.Success(unknown));
             }
 
             if (request.Items.Any(item =>
@@ -177,8 +182,55 @@ public sealed class InMemoryInventoryReservationService
                 false));
             _operations.Add(request.OperationKey,
                 new OperationRecord(fingerprint, outcome));
+
+            if (behavior.Kind == InMemoryReservationBehaviorKind.LostResponse)
+            {
+                // Stock is held and the outcome is recorded, but the caller
+                // never learns it. Only a later lookup can free this.
+                InventoryReservationOutcome lost =
+                    new InventoryReservationIndeterminate(behavior.FailureCode!);
+                return Task.FromResult(
+                    Result<InventoryReservationOutcome>.Success(lost));
+            }
+
             return Task.FromResult(
                 Result<InventoryReservationOutcome>.Success(outcome));
+        }
+    }
+
+    public Task<Result<InventoryReservationOutcome>> ResolveAsync(
+        InventoryReservationQuery query,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        if (query is null || query.OperationKey is null)
+            return Task.FromResult(
+                Result<InventoryReservationOutcome>.Failure(
+                    InfrastructureErrors.InventoryInvalidRequest));
+        lock (_syncRoot)
+        {
+            if (!_operations.TryGetValue(query.OperationKey, out var recorded))
+            {
+                // The key was never seen, so no stock was taken. Reporting this
+                // as a rejection is what lets the caller safely abandon.
+                InventoryReservationOutcome missing =
+                    new InventoryReservationRejected(NotRecordedCode);
+                return Task.FromResult(
+                    Result<InventoryReservationOutcome>.Success(missing));
+            }
+
+            if (recorded.Outcome is InventoryReservationSucceeded succeeded
+                && (!_reservations.TryGetValue(
+                        succeeded.ReservationId, out var reservation)
+                    || reservation.OrderId != query.OrderId
+                    || reservation.CheckoutAttemptId != query.CheckoutAttemptId
+                    || reservation.VendorId != query.VendorId))
+                return Task.FromResult(
+                    Result<InventoryReservationOutcome>.Failure(
+                        InfrastructureErrors.InventoryOperationKeyConflict));
+
+            return Task.FromResult(
+                Result<InventoryReservationOutcome>.Success(recorded.Outcome));
         }
     }
 

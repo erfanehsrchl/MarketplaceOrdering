@@ -22,6 +22,7 @@ public sealed class ConfirmPaymentConcurrencyTests
         paymentSnapshot.ConfirmPayment(
             transactionId,
             paymentSnapshot.CheckoutAttempt!.FulfillmentPlan!.TotalPayable,
+            paymentSnapshot.PaymentExpiresAt!.Value.AddSeconds(-1),
             paymentSnapshot.PaymentExpiresAt!.Value.AddSeconds(-1));
         expirationSnapshot.Expire(
             expirationSnapshot.PaymentExpiresAt!.Value);
@@ -50,6 +51,7 @@ public sealed class ConfirmPaymentConcurrencyTests
         paymentSnapshot.ConfirmPayment(
             transactionId,
             paymentSnapshot.CheckoutAttempt!.FulfillmentPlan!.TotalPayable,
+            paymentSnapshot.PaymentExpiresAt!.Value.AddSeconds(-1),
             paymentSnapshot.PaymentExpiresAt!.Value.AddSeconds(-1));
         expirationSnapshot.Expire(
             expirationSnapshot.PaymentExpiresAt!.Value);

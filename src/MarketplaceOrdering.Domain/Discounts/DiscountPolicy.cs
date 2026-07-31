@@ -97,6 +97,36 @@ public sealed class DiscountPolicy
                 normalizedVendorIds));
     }
 
+    /// <summary>
+    /// Validates everything that can be known before any price exists, so a
+    /// structurally unusable code is rejected while the Order is still a Draft
+    /// instead of surfacing only at Checkout.
+    /// </summary>
+    /// <remarks>
+    /// Amount-dependent conditions (<see cref="MinimumProductsAmount"/>,
+    /// <see cref="MaximumDiscountAmount"/>) and Vendor eligibility deliberately
+    /// stay out of this check: in Draft the Order has no prices and no Vendors
+    /// yet, because both are resolved from Vendor Offers during Checkout. They
+    /// are enforced by <see cref="Evaluate"/> against the selected
+    /// Fulfillment Plan.
+    /// </remarks>
+    public Result EnsureSelectableAt(DateTimeOffset now)
+    {
+        if (!IsActive)
+        {
+            return Result.Failure(DiscountErrors.Inactive);
+        }
+
+        if (StartsAt.HasValue && now < StartsAt.Value)
+        {
+            return Result.Failure(DiscountErrors.NotStarted);
+        }
+
+        return EndsAt.HasValue && now > EndsAt.Value
+            ? Result.Failure(DiscountErrors.Expired)
+            : Result.Success();
+    }
+
     public Result<DiscountCalculation> Evaluate(
         DiscountEvaluationContext context,
         ProportionalDiscountAllocator allocator)
@@ -158,19 +188,10 @@ public sealed class DiscountPolicy
 
     private Result EnsureApplicable(DiscountEvaluationContext context)
     {
-        if (!IsActive)
+        var selectable = EnsureSelectableAt(context.EvaluatedAt);
+        if (selectable.IsFailure)
         {
-            return Result.Failure(DiscountErrors.Inactive);
-        }
-
-        if (StartsAt.HasValue && context.EvaluatedAt < StartsAt.Value)
-        {
-            return Result.Failure(DiscountErrors.NotStarted);
-        }
-
-        if (EndsAt.HasValue && context.EvaluatedAt > EndsAt.Value)
-        {
-            return Result.Failure(DiscountErrors.Expired);
+            return selectable;
         }
 
         if (MinimumProductsAmount is { } minimum

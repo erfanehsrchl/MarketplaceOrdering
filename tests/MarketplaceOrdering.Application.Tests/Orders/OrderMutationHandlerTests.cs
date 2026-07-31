@@ -158,7 +158,8 @@ public sealed class OrderMutationHandlerTests
         var repository = RepositoryFor(order);
         var clock = new FakeClock();
 
-        var applied = await new ApplyDiscountCodeCommandHandler(repository, clock)
+        var applied = await new ApplyDiscountCodeCommandHandler(
+                repository, ApplicationTestData.DiscountProvider(), clock)
             .Handle(
                 new ApplyDiscountCodeCommand(order.Id.Value, " save "),
                 CancellationToken.None);
